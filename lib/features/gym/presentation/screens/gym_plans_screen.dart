@@ -15,6 +15,7 @@ import '../../../../shared/providers/module_cache.dart';
 import '../../../../shared/providers/persistent_store.dart';
 import '../../data/gym_labels.dart';
 import '../widgets/exercise_demo_sheet.dart';
+import '../widgets/saved_plan_day_actions.dart';
 import '../widgets/saved_plan_editor_sheet.dart';
 
 class GymPlansScreen extends ConsumerStatefulWidget {
@@ -268,6 +269,39 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
           ? Map<String, dynamic>.from(result['draft'] as Map)
           : null;
       if (draft != null) await _persistDraft(draft);
+    } catch (e) {
+      if (!mounted) return;
+      context.showError(apiErrorMessage(e));
+    }
+  }
+
+  Future<void> _savePlanDays(Map<String, dynamic> plan, List<Map<String, dynamic>> days) async {
+    final id = (plan['id'] as num?)?.toInt();
+    if (id == null) return;
+    try {
+      final updated = await ref.read(vivrantApiProvider).updateGymPlan(id, {
+        'title': plan['title'],
+        'summary': plan['summary'],
+        'focus': plan['focus'],
+        'level': plan['level'],
+        'days': days,
+        'recommendations': plan['recommendations'],
+        'training_days': trainingDaysFromSavedDays(
+          days,
+          (plan['training_days'] as List?)
+              ?.map((item) => (item as num).toInt())
+              .toList(),
+        ),
+      });
+      if (!mounted) return;
+      setState(() {
+        _plans = [
+          for (final item in _plans)
+            if ((item['id'] as num?)?.toInt() == id) updated else item,
+        ];
+      });
+      ref.read(moduleCacheProvider).write(ModuleCacheKeys.gymPlans, _plans);
+      context.showSuccess('Program updated');
     } catch (e) {
       if (!mounted) return;
       context.showError(apiErrorMessage(e));
@@ -952,6 +986,7 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
                         });
                       },
                       onUseInDraft: () => _mergeIntoDraft(p),
+                      onSaveDays: (days) => _savePlanDays(p, days),
                       onShare: () => showShareExportSheet(context, gymPlanDoc(p)),
                       onEdit: () async {
                         final id = (p['id'] as num?)?.toInt();
@@ -1409,6 +1444,7 @@ class _PlanCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onUseInDraft,
+    required this.onSaveDays,
   });
 
   final Map<String, dynamic> plan;
@@ -1419,6 +1455,7 @@ class _PlanCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onUseInDraft;
+  final Future<void> Function(List<Map<String, dynamic>> days) onSaveDays;
 
   void _openSession(BuildContext context, {String? day}) {
     final planId = (plan['id'] as num?)?.toInt();
@@ -1706,13 +1743,12 @@ class _PlanCard extends StatelessWidget {
                       );
                     },
                   ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => _openSession(context, day: day['day']?.toString()),
-                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                    label: const Text('Start this day'),
-                  ),
+                SavedPlanDayActions(
+                  plan: plan,
+                  day: day,
+                  dayIndex: days.indexOf(day),
+                  onStart: () => _openSession(context, day: day['day']?.toString()),
+                  onSaveDays: onSaveDays,
                 ),
                 if (dayAlternatives(day).isNotEmpty) ...[
                   const SizedBox(height: 4),

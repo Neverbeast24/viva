@@ -70,6 +70,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
   DateTime? _startedAt;
   bool _saving = false;
   bool _restored = false;
+  List<_RunnerItem> _extras = [];
 
   Timer? _ticker;
   Timer? _syncTimer;
@@ -159,8 +160,8 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
 
   List<_RunnerItem> get _items {
     final day = _sessionDay;
-    if (day == null) return const [];
-    return _buildItems(day);
+    if (day == null) return List.unmodifiable(_extras);
+    return [..._buildItems(day), ..._extras];
   }
 
   List<_RunnerItem> _buildItems(Map<String, dynamic> day) {
@@ -214,6 +215,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
   }
 
   void _resetFromPlan() {
+    _extras = [];
     final items = _items;
     _checks = {
       for (final item in items) item.key: List<bool>.filled(item.setCount, false),
@@ -438,6 +440,73 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     _persistSession();
   }
 
+  void _addExtra() {
+    final key = 'extra-${DateTime.now().millisecondsSinceEpoch}';
+    final item = _RunnerItem(
+      key: key,
+      name: 'Extra move',
+      originalName: 'Extra move',
+      setsLabel: '3 x 10',
+      rest: '60s',
+      restSeconds: 60,
+      setCount: 3,
+      kind: 'addon',
+    );
+    setState(() {
+      _extras = [..._extras, item];
+      _checks[key] = List<bool>.filled(3, false);
+      _names[key] = 'Extra move';
+    });
+    _persistSession();
+  }
+
+  Future<void> _persistMove(int toIso) async {
+    final plan = _plan;
+    final today = _sessionDay;
+    if (plan == null || today == null) return;
+    final id = (plan['id'] as num?)?.toInt();
+    if (id == null) return;
+    final days = [
+      for (final raw in (plan['days'] as List? ?? const []))
+        if (raw is Map) Map<String, dynamic>.from(raw),
+    ];
+    final fromIndex = days.indexWhere(
+      (day) => day['day']?.toString() == today['day']?.toString(),
+    );
+    if (fromIndex < 0) return;
+    final next = moveSavedPlanDay(days, fromIndex, toIso);
+    setState(() => _saving = true);
+    try {
+      await ref.read(vivrantApiProvider).updateGymPlan(id, {
+        'title': plan['title'],
+        'summary': plan['summary'],
+        'focus': plan['focus'],
+        'level': plan['level'],
+        'days': next,
+        'recommendations': plan['recommendations'],
+        'training_days': trainingDaysFromSavedDays(
+          next,
+          (plan['training_days'] as List?)?.map((item) => (item as num).toInt()).toList(),
+        ),
+      });
+      if (!mounted) return;
+      final moved = next.firstWhere(
+        (day) => weekdayIsoFromLabel(day['day']?.toString() ?? '') == toIso,
+        orElse: () => next[fromIndex],
+      );
+      setState(() {
+        _saving = false;
+        _dayLabel = moved['day']?.toString() ?? _dayLabel;
+        _resetFromPlan();
+      });
+      context.showSuccess('Moved that workout to a new weekday.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      context.showError(apiErrorMessage(e));
+    }
+  }
+
   Future<void> _save() async {
     final plan = _plan;
     final today = _sessionDay;
@@ -639,6 +708,27 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
             ),
           ],
           const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            key: ValueKey('move_${_planId}_$_dayLabel'),
+            initialValue: weekdayIsoFromLabel(today['day']?.toString() ?? ''),
+            decoration: const InputDecoration(labelText: 'Move this workout to'),
+            items: [
+              for (final item in gymWeekdays)
+                DropdownMenuItem(
+                  value: item.iso,
+                  child: Text(
+                    '${item.full}${weekdayIsoFromLabel(today['day']?.toString() ?? '') == item.iso ? ' · current' : ''}',
+                  ),
+                ),
+            ],
+            onChanged: _saving
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    _persistMove(value);
+                  },
+          ),
+          const SizedBox(height: 12),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
@@ -732,6 +822,12 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
             ),
             const SizedBox(height: 10),
           ],
+          TextButton.icon(
+            onPressed: _addExtra,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Add a move'),
+          ),
+          const SizedBox(height: 8),
           ElevatedButton(
             onPressed: _saving || _doneCount == 0 ? null : _save,
             child: Text(

@@ -192,6 +192,58 @@ void main() {
     });
   });
 
+  group('moveSavedPlanDay', () {
+    test('moves a workout onto an empty weekday', () {
+      final next = moveSavedPlanDay(
+        [
+          {
+            'day': 'Monday · Pull',
+            'focus': 'Pull',
+            'exercises': [
+              {'name': 'Row', 'sets': '3 x 10', 'rest': '60s'},
+            ],
+          },
+        ],
+        0,
+        3,
+      );
+      expect(next, hasLength(1));
+      expect(next.first['day'], contains('Wednesday'));
+      expect((next.first['exercises'] as List).first['name'], 'Row');
+    });
+
+    test('swaps two weekday sessions', () {
+      final next = moveSavedPlanDay(
+        [
+          {
+            'day': 'Monday · Pull',
+            'focus': 'Pull',
+            'exercises': [
+              {'name': 'Row'},
+            ],
+          },
+          {
+            'day': 'Wednesday · Push',
+            'focus': 'Push',
+            'exercises': [
+              {'name': 'Press'},
+            ],
+          },
+        ],
+        0,
+        3,
+      );
+      expect(
+        next.firstWhere((day) => day['day'].toString().contains('Wednesday'))['focus'],
+        'Pull',
+      );
+      expect(
+        next.firstWhere((day) => day['day'].toString().contains('Monday'))['focus'],
+        'Push',
+      );
+    });
+  });
+
   group('moveKeptDayOnDraft', () {
     test('swaps kept workouts between weekdays', () {
       final draft = {

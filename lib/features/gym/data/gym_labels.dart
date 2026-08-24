@@ -942,6 +942,70 @@ Map<String, dynamic> stampDayWeekday(Map<String, dynamic> day, int iso) {
   };
 }
 
+Map<String, dynamic> emptyPlanExercise() => {
+      'name': '',
+      'sets': '3 x 10',
+      'rest': '60s',
+    };
+
+List<Map<String, dynamic>> clonePlanDays(List<Map<String, dynamic>> days) {
+  return [
+    for (final day in days)
+      {
+        ...day,
+        'exercises': [
+          for (final ex in (day['exercises'] as List? ?? const []))
+            if (ex is Map) Map<String, dynamic>.from(ex),
+        ],
+      },
+  ];
+}
+
+/// Move a saved program day onto another weekday, swapping if that slot is taken.
+List<Map<String, dynamic>> moveSavedPlanDay(
+  List<Map<String, dynamic>> days,
+  int fromIndex,
+  int toIso,
+) {
+  if (fromIndex < 0 || fromIndex >= days.length || toIso < 1 || toIso > 7) {
+    return days;
+  }
+  final next = clonePlanDays(days);
+  final fromIso = weekdayIsoFromLabel(next[fromIndex]['day']?.toString() ?? '');
+  if (fromIso == toIso) return next;
+  final toIndex = next.indexWhere(
+    (day) => weekdayIsoFromLabel(day['day']?.toString() ?? '') == toIso,
+  );
+  next[fromIndex] = stampDayWeekday(next[fromIndex], toIso);
+  if (toIndex >= 0 && toIndex != fromIndex && fromIso != null) {
+    next[toIndex] = stampDayWeekday(next[toIndex], fromIso);
+  }
+  next.sort((a, b) {
+    final ia = weekdayIsoFromLabel(a['day']?.toString() ?? '') ?? 99;
+    final ib = weekdayIsoFromLabel(b['day']?.toString() ?? '') ?? 99;
+    return ia.compareTo(ib);
+  });
+  return next;
+}
+
+List<int> trainingDaysFromSavedDays(
+  List<Map<String, dynamic>> days, [
+  List<int>? fallback,
+]) {
+  final labeled = <int>[];
+  for (final day in days) {
+    final iso = weekdayIsoFromLabel(day['day']?.toString() ?? '');
+    if (iso != null && !labeled.contains(iso)) labeled.add(iso);
+  }
+  if (labeled.isNotEmpty) {
+    return sanitizeTrainingDays(labeled, fallbackCount: labeled.length);
+  }
+  return sanitizeTrainingDays(
+    fallback ?? const [],
+    fallbackCount: days.isEmpty ? 3 : days.length,
+  );
+}
+
 /// Swap or move a kept workout onto another weekday slot.
 Map<String, dynamic> moveKeptDayOnDraft(
   Map<String, dynamic> draft,
