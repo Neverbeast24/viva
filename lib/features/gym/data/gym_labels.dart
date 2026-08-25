@@ -332,6 +332,145 @@ List<GymExercise> filterGymMoveCatalog(
   ];
 }
 
+const _gymLoadBands = <String, List<List<double>>>{
+  'beginner': [
+    [0.15, 0.35],
+    [0.40, 0.70],
+  ],
+  'intermediate': [
+    [0.25, 0.45],
+    [0.60, 1.00],
+  ],
+  'advanced': [
+    [0.35, 0.55],
+    [0.80, 1.40],
+  ],
+};
+
+String _gymLoadLevel(String? level) {
+  final raw = (level ?? '').toLowerCase();
+  if (raw == 'advanced') return 'advanced';
+  if (raw == 'intermediate') return 'intermediate';
+  return 'beginner';
+}
+
+double _gymLoadBodyKg(double? bodyWeightKg) {
+  final kg = bodyWeightKg ?? 70;
+  if (kg >= 30 && kg <= 400) return kg;
+  return 70;
+}
+
+int _roundGymKg(num n) => (n / 2).round().clamp(1, 500) * 2;
+
+String _formatGymKgWindow(double bodyKg, double loPct, double hiPct) {
+  final mid = bodyKg * ((loPct + hiPct) / 2);
+  final lo = _roundGymKg(mid - 2);
+  final hiRaw = _roundGymKg(mid + 2);
+  final hi = hiRaw < lo + 2 ? lo + 2 : hiRaw;
+  return '$lo–$hi kg';
+}
+
+bool _isCardioGymMove(String name, String? equipment) {
+  final gear = (equipment ?? '').toLowerCase();
+  if (gear == 'cardio_machine' || gear == 'cardio') return true;
+  return RegExp(
+    r'\b(treadmill|elliptical|bike|cycle|row(?:er|ing)?|climber|stair|intervals?|incline walk)\b',
+  ).hasMatch(name.toLowerCase());
+}
+
+bool _isBodyweightGymMove(String name, String? equipment) {
+  final n = name.toLowerCase();
+  final gear = (equipment ?? '').toLowerCase();
+  if (RegExp(r'\b(dumbbell|barbell|kettlebell|machine|cable|smith|landmine)\b').hasMatch(n)) {
+    return false;
+  }
+  if (gear == 'bodyweight') return true;
+  return RegExp(
+    r'\b(bodyweight|air squat|push-?ups?|plank|sit-?ups?|crunch|jumping jack|mountain climber|burpee)\b',
+  ).hasMatch(n);
+}
+
+bool _isIsolationGymMove(String name) {
+  return RegExp(
+    r'\b(extension|curl|flye?s?|raise|kickback|pushdown|pullover|abduct|adduct|calf|shrug|pec deck|lateral|concentration|preacher)\b',
+  ).hasMatch(name.toLowerCase());
+}
+
+/// Working load for a program move: cardio / bodyweight labels, or a kg window from level + body weight.
+String suggestGymMoveWeight(
+  String name, {
+  String? level,
+  double? bodyWeightKg,
+  String? equipment,
+  List<GymExercise> catalog = const [],
+}) {
+  final trimmed = name.trim();
+  if (trimmed.isEmpty || RegExp(r'^extra move$', caseSensitive: false).hasMatch(trimmed)) {
+    return '';
+  }
+  final match = findExerciseMatch(trimmed, catalog);
+  final gear = (equipment != null && equipment.isNotEmpty)
+      ? equipment
+      : (match?.equipment ?? inferCustomEquipment(trimmed));
+  if (_isCardioGymMove(trimmed, gear)) return 'easy pace';
+  if (_isBodyweightGymMove(trimmed, gear)) return 'bodyweight';
+  final band = _gymLoadBands[_gymLoadLevel(level)]!;
+  final pct = _isIsolationGymMove(trimmed) ? band[0] : band[1];
+  return _formatGymKgWindow(_gymLoadBodyKg(bodyWeightKg), pct[0], pct[1]);
+}
+
+/// Keep a typed load; otherwise follow the programmed/suggested weight for the selected move.
+String nextGymMoveWeight(
+  String name, {
+  String? currentWeight,
+  String? previousName,
+  String? level,
+  double? bodyWeightKg,
+  String? equipment,
+  List<GymExercise> catalog = const [],
+}) {
+  final suggested = suggestGymMoveWeight(
+    name,
+    level: level,
+    bodyWeightKg: bodyWeightKg,
+    equipment: equipment,
+    catalog: catalog,
+  );
+  final current = (currentWeight ?? '').trim();
+  if (current.isEmpty) return suggested;
+  final previousSuggested = (previousName ?? '').trim().isEmpty
+      ? ''
+      : suggestGymMoveWeight(
+          previousName!,
+          level: level,
+          bodyWeightKg: bodyWeightKg,
+          equipment: equipment,
+          catalog: catalog,
+        );
+  if (current == previousSuggested) return suggested;
+  return current;
+}
+
+String resolveSessionMoveWeight(
+  String name, {
+  String? programmedWeight,
+  String? savedWeight,
+  String? level,
+  double? bodyWeightKg,
+  List<GymExercise> catalog = const [],
+}) {
+  final saved = (savedWeight ?? '').trim();
+  if (saved.isNotEmpty) return saved;
+  final programmed = (programmedWeight ?? '').trim();
+  if (programmed.isNotEmpty) return programmed;
+  return suggestGymMoveWeight(
+    name,
+    level: level,
+    bodyWeightKg: bodyWeightKg,
+    catalog: catalog,
+  );
+}
+
 /// Mirrors web sanitize for avoid targets (allowlist only).
 List<String> sanitizeAvoidTargets(Iterable<String> input) {
   final allow = gymAvoidTargets.toSet();

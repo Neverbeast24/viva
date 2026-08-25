@@ -6,21 +6,32 @@ import '../../data/gym_labels.dart';
 import 'gym_move_picker.dart';
 
 class SavedPlanEditorSheet extends StatefulWidget {
-  const SavedPlanEditorSheet({super.key, required this.plan, this.catalog = const []});
+  const SavedPlanEditorSheet({
+    super.key,
+    required this.plan,
+    this.catalog = const [],
+    this.bodyWeightKg,
+  });
 
   final Map<String, dynamic> plan;
   final List<GymExercise> catalog;
+  final double? bodyWeightKg;
 
   static Future<Map<String, dynamic>?> show(
     BuildContext context,
     Map<String, dynamic> plan, {
     List<GymExercise> catalog = const [],
+    double? bodyWeightKg,
   }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => SavedPlanEditorSheet(plan: plan, catalog: catalog),
+      builder: (context) => SavedPlanEditorSheet(
+        plan: plan,
+        catalog: catalog,
+        bodyWeightKg: bodyWeightKg,
+      ),
     );
   }
 
@@ -135,8 +146,18 @@ class _SavedPlanEditorSheetState extends State<SavedPlanEditorSheet> {
                                             children: [
                                               GymMovePickerField(
                                                 value: day.exercises[i].name.text,
-                                                onChanged: (name) =>
-                                                    day.exercises[i].name.text = name,
+                                                onChanged: (name) {
+                                                  final previous = day.exercises[i].name.text;
+                                                  day.exercises[i].name.text = name;
+                                                  day.exercises[i].weight.text = nextGymMoveWeight(
+                                                    name,
+                                                    currentWeight: day.exercises[i].weight.text,
+                                                    previousName: previous,
+                                                    level: widget.plan['level']?.toString(),
+                                                    bodyWeightKg: widget.bodyWeightKg,
+                                                    catalog: widget.catalog,
+                                                  );
+                                                },
                                                 catalog: widget.catalog,
                                               ),
                                               TextField(

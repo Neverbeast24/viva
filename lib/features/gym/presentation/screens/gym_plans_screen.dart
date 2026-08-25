@@ -11,6 +11,7 @@ import '../../../../core/utils/share_export.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../data/vivrant_api.dart';
 import '../../../../shared/models/gym_exercise.dart';
+import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/providers/module_cache.dart';
 import '../../../../shared/providers/persistent_store.dart';
 import '../../data/gym_labels.dart';
@@ -383,6 +384,7 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
         'days': days,
       },
       catalog: _exercises,
+      bodyWeightKg: ref.read(authProvider).profile?.weightKg,
     );
     if (result == null || !mounted) return;
     final nextKept = <String, dynamic>{};
@@ -978,6 +980,7 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
                               .where((e) => _knownSlugs.contains(e.slug))
                               .toList(growable: false),
                       catalog: _exercises,
+                      bodyWeightKg: ref.watch(authProvider).profile?.weightKg,
                       expanded: _expanded.contains((p['id'] as num?)?.toInt()),
                       onToggleExpand: () {
                         final id = (p['id'] as num?)?.toInt();
@@ -1000,6 +1003,7 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
                           context,
                           p,
                           catalog: _exercises,
+                          bodyWeightKg: ref.read(authProvider).profile?.weightKg,
                         );
                         if (draft == null || !mounted) return;
                         try {
@@ -1448,6 +1452,7 @@ class _PlanCard extends StatelessWidget {
     required this.plan,
     required this.exercises,
     required this.catalog,
+    this.bodyWeightKg,
     required this.expanded,
     required this.onToggleExpand,
     required this.onShare,
@@ -1460,6 +1465,7 @@ class _PlanCard extends StatelessWidget {
   final Map<String, dynamic> plan;
   final List<GymExercise> exercises;
   final List<GymExercise> catalog;
+  final double? bodyWeightKg;
   final bool expanded;
   final VoidCallback onToggleExpand;
   final VoidCallback onShare;
@@ -1759,6 +1765,7 @@ class _PlanCard extends StatelessWidget {
                   day: day,
                   dayIndex: days.indexOf(day),
                   catalog: catalog,
+                  bodyWeightKg: bodyWeightKg,
                   onStart: () => _openSession(context, day: day['day']?.toString()),
                   onSaveDays: onSaveDays,
                 ),

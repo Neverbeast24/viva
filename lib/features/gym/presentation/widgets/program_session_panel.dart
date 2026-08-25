@@ -9,6 +9,7 @@ import '../../../../core/theme/vivrant_colors.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../data/vivrant_api.dart';
+import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/providers/persistent_store.dart';
 import '../../../../shared/models/gym_exercise.dart';
 import '../../data/gym_labels.dart';
@@ -69,6 +70,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
   String _dayLabel = '';
   Map<String, List<bool>> _checks = {};
   Map<String, String> _names = {};
+  Map<String, String> _weights = {};
   DateTime? _startedAt;
   bool _saving = false;
   bool _restored = false;
@@ -100,7 +102,10 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
         for (final row in rows) GymExercise.fromJson(row),
       ];
       if (!mounted) return;
-      setState(() => _catalog = catalog);
+      setState(() {
+        _catalog = catalog;
+        _fillMissingWeights();
+      });
     } catch (_) {
       // Picker still accepts typed names without the catalog.
     }
@@ -231,6 +236,27 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     ];
   }
 
+  double? get _bodyWeightKg => ref.read(authProvider).profile?.weightKg;
+
+  String _sessionWeightFor(_RunnerItem item, {String? name, String? saved}) {
+    return resolveSessionMoveWeight(
+      name ?? _names[item.key] ?? item.name,
+      programmedWeight: item.weight,
+      savedWeight: saved ?? _weights[item.key],
+      level: _plan?['level']?.toString(),
+      bodyWeightKg: _bodyWeightKg,
+      catalog: _catalog,
+    );
+  }
+
+  void _fillMissingWeights() {
+    for (final item in _items) {
+      if ((_weights[item.key] ?? '').trim().isNotEmpty) continue;
+      final next = _sessionWeightFor(item, saved: '');
+      if (next.isNotEmpty) _weights[item.key] = next;
+    }
+  }
+
   void _resetFromPlan() {
     _extras = [];
     final items = _items;
@@ -238,6 +264,9 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       for (final item in items) item.key: List<bool>.filled(item.setCount, false),
     };
     _names = {for (final item in items) item.key: item.name};
+    _weights = {
+      for (final item in items) item.key: _sessionWeightFor(item, saved: ''),
+    };
   }
 
   int get _restLeft => restRemainingSeconds(_restEndsAtMs);
@@ -256,6 +285,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       'session_date': todaySessionDate(),
       'checks': _checks,
       'names': _names,
+      'weights': _weights,
       'started_at': _startedAt?.millisecondsSinceEpoch,
       'rest_ends_at': _restEndsAtMs,
       'rest_label': _restLabel,
@@ -311,6 +341,18 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       for (final item in items) {
         final value = names[item.key]?.toString();
         if (value != null && value.isNotEmpty) _names[item.key] = value;
+      }
+    }
+    final weights = saved['weights'];
+    if (weights is Map) {
+      for (final item in items) {
+        final value = weights[item.key]?.toString();
+        if (value != null && value.isNotEmpty) _weights[item.key] = value;
+      }
+    }
+    for (final item in items) {
+      if ((_weights[item.key] ?? '').trim().isEmpty) {
+        _weights[item.key] = _sessionWeightFor(item);
       }
     }
     final started = saved['started_at'];
@@ -452,7 +494,16 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     if (swap == null) return;
     setState(() {
       final current = _names[item.key] ?? item.name;
-      _names[item.key] = current == item.originalName ? swap : item.originalName;
+      final next = current == item.originalName ? swap : item.originalName;
+      _names[item.key] = next;
+      _weights[item.key] = nextGymMoveWeight(
+        next,
+        currentWeight: _weights[item.key],
+        previousName: current,
+        level: _plan?['level']?.toString(),
+        bodyWeightKg: _bodyWeightKg,
+        catalog: _catalog,
+      );
     });
     _persistSession();
   }
@@ -473,6 +524,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       _extras = [..._extras, item];
       _checks[key] = List<bool>.filled(3, false);
       _names[key] = 'Extra move';
+      _weights[key] = '';
     });
     _persistSession();
   }
@@ -537,7 +589,8 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
         'name': _names[item.key] ?? item.name,
         'sets': item.setsLabel,
         'rest': item.rest,
-        if (item.weight != null) 'weight': item.weight,
+        if ((_weights[item.key] ?? item.weight ?? '').trim().isNotEmpty)
+          'weight': (_weights[item.key] ?? item.weight)!.trim(),
         'done': completed >= item.setCount,
         'completed_sets': completed,
       });
@@ -832,10 +885,26 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
             _ExerciseCard(
               item: item,
               name: displayGymMoveName(_names[item.key] ?? item.name),
+              weight: _weights[item.key] ?? item.weight ?? '',
               checks: _checks[item.key] ?? const [],
               catalog: _catalog,
               onNameChanged: (name) {
-                setState(() => _names[item.key] = name);
+                setState(() {
+                  final previous = _names[item.key] ?? item.name;
+                  _names[item.key] = name;
+                  _weights[item.key] = nextGymMoveWeight(
+                    name,
+                    currentWeight: _weights[item.key],
+                    previousName: previous,
+                    level: _plan?['level']?.toString(),
+                    bodyWeightKg: _bodyWeightKg,
+                    catalog: _catalog,
+                  );
+                });
+                _persistSession();
+              },
+              onWeightChanged: (value) {
+                setState(() => _weights[item.key] = value);
                 _persistSession();
               },
               onToggleExercise: () => _toggleExercise(item),
@@ -866,9 +935,11 @@ class _ExerciseCard extends StatelessWidget {
   const _ExerciseCard({
     required this.item,
     required this.name,
+    required this.weight,
     required this.checks,
     required this.catalog,
     required this.onNameChanged,
+    required this.onWeightChanged,
     required this.onToggleExercise,
     required this.onToggleSet,
     this.onSwap,
@@ -876,9 +947,11 @@ class _ExerciseCard extends StatelessWidget {
 
   final _RunnerItem item;
   final String name;
+  final String weight;
   final List<bool> checks;
   final List<GymExercise> catalog;
   final ValueChanged<String> onNameChanged;
+  final ValueChanged<String> onWeightChanged;
   final VoidCallback onToggleExercise;
   final ValueChanged<int> onToggleSet;
   final VoidCallback? onSwap;
@@ -918,10 +991,12 @@ class _ExerciseCard extends StatelessWidget {
                         onChanged: onNameChanged,
                         catalog: catalog,
                       ),
+                      const SizedBox(height: 6),
+                      _SessionWeightField(value: weight, onChanged: onWeightChanged),
+                      const SizedBox(height: 4),
                       Text(
                         [
                           item.setsLabel,
-                          if (item.weight != null) item.weight,
                           if (item.restSeconds > 0) 'rest ${item.rest}',
                           if (item.kind == 'addon') 'extra',
                         ].join(' · '),
@@ -965,6 +1040,52 @@ class _ExerciseCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _SessionWeightField extends StatefulWidget {
+  const _SessionWeightField({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_SessionWeightField> createState() => _SessionWeightFieldState();
+}
+
+class _SessionWeightFieldState extends State<_SessionWeightField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SessionWeightField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value && _controller.text != widget.value) {
+      _controller.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      decoration: const InputDecoration(labelText: 'Weight', isDense: true),
+      onChanged: widget.onChanged,
     );
   }
 }

@@ -14,6 +14,7 @@ class SavedPlanDayActions extends StatelessWidget {
     required this.onStart,
     required this.onSaveDays,
     this.catalog = const [],
+    this.bodyWeightKg,
   });
 
   final Map<String, dynamic> plan;
@@ -22,6 +23,7 @@ class SavedPlanDayActions extends StatelessWidget {
   final VoidCallback onStart;
   final Future<void> Function(List<Map<String, dynamic>> days) onSaveDays;
   final List<GymExercise> catalog;
+  final double? bodyWeightKg;
 
   List<Map<String, dynamic>> get _days => [
         for (final raw in (plan['days'] as List? ?? const []))
@@ -31,7 +33,13 @@ class SavedPlanDayActions extends StatelessWidget {
   int? get _currentIso => weekdayIsoFromLabel(day['day']?.toString() ?? '');
 
   Future<void> _modify(BuildContext context) async {
-    final edited = await _DayEditorSheet.show(context, day, catalog: catalog);
+    final edited = await _DayEditorSheet.show(
+      context,
+      day,
+      catalog: catalog,
+      level: plan['level']?.toString(),
+      bodyWeightKg: bodyWeightKg,
+    );
     if (edited == null) return;
     final days = _days;
     if (dayIndex < 0 || dayIndex >= days.length) return;
@@ -48,7 +56,13 @@ class SavedPlanDayActions extends StatelessWidget {
     if (exercises.length >= 6) return;
     exercises.add(emptyPlanExercise());
     current['exercises'] = exercises;
-    final edited = await _DayEditorSheet.show(context, current, catalog: catalog);
+    final edited = await _DayEditorSheet.show(
+      context,
+      current,
+      catalog: catalog,
+      level: plan['level']?.toString(),
+      bodyWeightKg: bodyWeightKg,
+    );
     if (edited == null) return;
     final days = _days;
     if (dayIndex < 0 || dayIndex >= days.length) return;
@@ -111,21 +125,35 @@ class SavedPlanDayActions extends StatelessWidget {
 }
 
 class _DayEditorSheet extends StatefulWidget {
-  const _DayEditorSheet({required this.day, required this.catalog});
+  const _DayEditorSheet({
+    required this.day,
+    required this.catalog,
+    this.level,
+    this.bodyWeightKg,
+  });
 
   final Map<String, dynamic> day;
   final List<GymExercise> catalog;
+  final String? level;
+  final double? bodyWeightKg;
 
   static Future<Map<String, dynamic>?> show(
     BuildContext context,
     Map<String, dynamic> day, {
     List<GymExercise> catalog = const [],
+    String? level,
+    double? bodyWeightKg,
   }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => _DayEditorSheet(day: day, catalog: catalog),
+      builder: (context) => _DayEditorSheet(
+        day: day,
+        catalog: catalog,
+        level: level,
+        bodyWeightKg: bodyWeightKg,
+      ),
     );
   }
 
@@ -137,16 +165,19 @@ class _ExerciseDraft {
   _ExerciseDraft(Map<String, dynamic> raw)
       : name = TextEditingController(text: raw['name']?.toString() ?? ''),
         sets = TextEditingController(text: raw['sets']?.toString() ?? '3 x 10'),
-        rest = TextEditingController(text: raw['rest']?.toString() ?? '60s');
+        rest = TextEditingController(text: raw['rest']?.toString() ?? '60s'),
+        weight = TextEditingController(text: raw['weight']?.toString() ?? '');
 
   final TextEditingController name;
   final TextEditingController sets;
   final TextEditingController rest;
+  final TextEditingController weight;
 
   void dispose() {
     name.dispose();
     sets.dispose();
     rest.dispose();
+    weight.dispose();
   }
 }
 
@@ -200,12 +231,27 @@ class _DayEditorSheetState extends State<_DayEditorSheet> {
                       children: [
                         GymMovePickerField(
                           value: _exercises[i].name.text,
-                          onChanged: (name) => _exercises[i].name.text = name,
+                          onChanged: (name) {
+                            final previous = _exercises[i].name.text;
+                            _exercises[i].name.text = name;
+                            _exercises[i].weight.text = nextGymMoveWeight(
+                              name,
+                              currentWeight: _exercises[i].weight.text,
+                              previousName: previous,
+                              level: widget.level,
+                              bodyWeightKg: widget.bodyWeightKg,
+                              catalog: widget.catalog,
+                            );
+                          },
                           catalog: widget.catalog,
                         ),
                         TextField(
                           controller: _exercises[i].sets,
                           decoration: const InputDecoration(labelText: 'Sets'),
+                        ),
+                        TextField(
+                          controller: _exercises[i].weight,
+                          decoration: const InputDecoration(labelText: 'Weight'),
                         ),
                         TextField(
                           controller: _exercises[i].rest,
@@ -254,6 +300,7 @@ class _DayEditorSheetState extends State<_DayEditorSheet> {
                         'name': ex.name.text.trim(),
                         'sets': ex.sets.text.trim().isEmpty ? '3 x 10' : ex.sets.text.trim(),
                         'rest': ex.rest.text.trim().isEmpty ? '60s' : ex.rest.text.trim(),
+                        if (ex.weight.text.trim().isNotEmpty) 'weight': ex.weight.text.trim(),
                       },
                 ],
               });

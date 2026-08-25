@@ -258,6 +258,40 @@ void main() {
     });
   });
 
+  group('suggestGymMoveWeight', () {
+    test('labels cardio and bodyweight moves', () {
+      expect(suggestGymMoveWeight('Treadmill incline walk'), 'easy pace');
+      expect(suggestGymMoveWeight('Bodyweight Squat'), 'bodyweight');
+    });
+
+    test('sizes isolation vs compound loads from body weight and program level', () {
+      expect(
+        suggestGymMoveWeight('Leg Extension Machine', level: 'beginner', bodyWeightKg: 70),
+        '16–20 kg',
+      );
+      expect(
+        suggestGymMoveWeight('Chest Press Machine', level: 'beginner', bodyWeightKg: 70),
+        '36–40 kg',
+      );
+    });
+
+    test('keeps a typed load unless the previous weight was the suggestion', () {
+      expect(
+        nextGymMoveWeight(
+          'Leg Extension Machine',
+          currentWeight: '40 kg',
+          previousName: 'Chest Press Machine',
+          level: 'beginner',
+        ),
+        '40 kg',
+      );
+      expect(
+        resolveSessionMoveWeight('Lat pulldown', programmedWeight: '15–20 kg'),
+        '15–20 kg',
+      );
+    });
+  });
+
   group('reorderPreviewExercisesOnDraft', () {
     test('moves a preview exercise', () {
       final draft = {
