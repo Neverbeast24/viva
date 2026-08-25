@@ -375,11 +375,15 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
         if (kept['$iso'] is Map) Map<String, dynamic>.from(kept['$iso'] as Map),
     ];
     if (days.isEmpty) return;
-    final result = await SavedPlanEditorSheet.show(context, {
-      ...current,
-      'title': current['title'] ?? 'Program',
-      'days': days,
-    });
+    final result = await SavedPlanEditorSheet.show(
+      context,
+      {
+        ...current,
+        'title': current['title'] ?? 'Program',
+        'days': days,
+      },
+      catalog: _exercises,
+    );
     if (result == null || !mounted) return;
     final nextKept = <String, dynamic>{};
     for (final raw in (result['days'] as List? ?? const [])) {
@@ -973,6 +977,7 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
                           : _exercises
                               .where((e) => _knownSlugs.contains(e.slug))
                               .toList(growable: false),
+                      catalog: _exercises,
                       expanded: _expanded.contains((p['id'] as num?)?.toInt()),
                       onToggleExpand: () {
                         final id = (p['id'] as num?)?.toInt();
@@ -991,7 +996,11 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
                       onEdit: () async {
                         final id = (p['id'] as num?)?.toInt();
                         if (id == null) return;
-                        final draft = await SavedPlanEditorSheet.show(context, p);
+                        final draft = await SavedPlanEditorSheet.show(
+                          context,
+                          p,
+                          catalog: _exercises,
+                        );
                         if (draft == null || !mounted) return;
                         try {
                           final updated = await ref.read(vivrantApiProvider).updateGymPlan(id, draft);
@@ -1438,6 +1447,7 @@ class _PlanCard extends StatelessWidget {
   const _PlanCard({
     required this.plan,
     required this.exercises,
+    required this.catalog,
     required this.expanded,
     required this.onToggleExpand,
     required this.onShare,
@@ -1449,6 +1459,7 @@ class _PlanCard extends StatelessWidget {
 
   final Map<String, dynamic> plan;
   final List<GymExercise> exercises;
+  final List<GymExercise> catalog;
   final bool expanded;
   final VoidCallback onToggleExpand;
   final VoidCallback onShare;
@@ -1747,6 +1758,7 @@ class _PlanCard extends StatelessWidget {
                   plan: plan,
                   day: day,
                   dayIndex: days.indexOf(day),
+                  catalog: catalog,
                   onStart: () => _openSession(context, day: day['day']?.toString()),
                   onSaveDays: onSaveDays,
                 ),

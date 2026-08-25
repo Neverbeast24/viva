@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/widgets.dart';
+import '../../../../shared/models/gym_exercise.dart';
 import '../../data/gym_labels.dart';
+import 'gym_move_picker.dart';
 
 class SavedPlanDayActions extends StatelessWidget {
   const SavedPlanDayActions({
@@ -11,6 +13,7 @@ class SavedPlanDayActions extends StatelessWidget {
     required this.dayIndex,
     required this.onStart,
     required this.onSaveDays,
+    this.catalog = const [],
   });
 
   final Map<String, dynamic> plan;
@@ -18,6 +21,7 @@ class SavedPlanDayActions extends StatelessWidget {
   final int dayIndex;
   final VoidCallback onStart;
   final Future<void> Function(List<Map<String, dynamic>> days) onSaveDays;
+  final List<GymExercise> catalog;
 
   List<Map<String, dynamic>> get _days => [
         for (final raw in (plan['days'] as List? ?? const []))
@@ -27,7 +31,7 @@ class SavedPlanDayActions extends StatelessWidget {
   int? get _currentIso => weekdayIsoFromLabel(day['day']?.toString() ?? '');
 
   Future<void> _modify(BuildContext context) async {
-    final edited = await _DayEditorSheet.show(context, day);
+    final edited = await _DayEditorSheet.show(context, day, catalog: catalog);
     if (edited == null) return;
     final days = _days;
     if (dayIndex < 0 || dayIndex >= days.length) return;
@@ -44,7 +48,7 @@ class SavedPlanDayActions extends StatelessWidget {
     if (exercises.length >= 6) return;
     exercises.add(emptyPlanExercise());
     current['exercises'] = exercises;
-    final edited = await _DayEditorSheet.show(context, current);
+    final edited = await _DayEditorSheet.show(context, current, catalog: catalog);
     if (edited == null) return;
     final days = _days;
     if (dayIndex < 0 || dayIndex >= days.length) return;
@@ -107,19 +111,21 @@ class SavedPlanDayActions extends StatelessWidget {
 }
 
 class _DayEditorSheet extends StatefulWidget {
-  const _DayEditorSheet({required this.day});
+  const _DayEditorSheet({required this.day, required this.catalog});
 
   final Map<String, dynamic> day;
+  final List<GymExercise> catalog;
 
   static Future<Map<String, dynamic>?> show(
     BuildContext context,
-    Map<String, dynamic> day,
-  ) {
+    Map<String, dynamic> day, {
+    List<GymExercise> catalog = const [],
+  }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => _DayEditorSheet(day: day),
+      builder: (context) => _DayEditorSheet(day: day, catalog: catalog),
     );
   }
 
@@ -192,9 +198,10 @@ class _DayEditorSheetState extends State<_DayEditorSheet> {
                   Expanded(
                     child: Column(
                       children: [
-                        TextField(
-                          controller: _exercises[i].name,
-                          decoration: const InputDecoration(labelText: 'Move'),
+                        GymMovePickerField(
+                          value: _exercises[i].name.text,
+                          onChanged: (name) => _exercises[i].name.text = name,
+                          catalog: widget.catalog,
                         ),
                         TextField(
                           controller: _exercises[i].sets,

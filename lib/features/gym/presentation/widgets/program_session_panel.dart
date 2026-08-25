@@ -10,8 +10,10 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../data/vivrant_api.dart';
 import '../../../../shared/providers/persistent_store.dart';
+import '../../../../shared/models/gym_exercise.dart';
 import '../../data/gym_labels.dart';
 import '../../data/gym_rest_alert.dart';
+import 'gym_move_picker.dart';
 
 class ProgramSessionPanel extends ConsumerStatefulWidget {
   const ProgramSessionPanel({
@@ -71,6 +73,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
   bool _saving = false;
   bool _restored = false;
   List<_RunnerItem> _extras = [];
+  List<GymExercise> _catalog = const [];
 
   Timer? _ticker;
   Timer? _syncTimer;
@@ -87,6 +90,20 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     _dayLabel = widget.initialDayLabel ?? '';
     _resetFromPlan();
     _restoreSession();
+    _loadCatalog();
+  }
+
+  Future<void> _loadCatalog() async {
+    try {
+      final rows = await ref.read(vivrantApiProvider).gymExercises();
+      final catalog = [
+        for (final row in rows) GymExercise.fromJson(row),
+      ];
+      if (!mounted) return;
+      setState(() => _catalog = catalog);
+    } catch (_) {
+      // Picker still accepts typed names without the catalog.
+    }
   }
 
   @override
@@ -816,6 +833,11 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
               item: item,
               name: displayGymMoveName(_names[item.key] ?? item.name),
               checks: _checks[item.key] ?? const [],
+              catalog: _catalog,
+              onNameChanged: (name) {
+                setState(() => _names[item.key] = name);
+                _persistSession();
+              },
               onToggleExercise: () => _toggleExercise(item),
               onToggleSet: (index) => _toggleSet(item, index),
               onSwap: item.swap == null ? null : () => _swap(item),
@@ -845,6 +867,8 @@ class _ExerciseCard extends StatelessWidget {
     required this.item,
     required this.name,
     required this.checks,
+    required this.catalog,
+    required this.onNameChanged,
     required this.onToggleExercise,
     required this.onToggleSet,
     this.onSwap,
@@ -853,6 +877,8 @@ class _ExerciseCard extends StatelessWidget {
   final _RunnerItem item;
   final String name;
   final List<bool> checks;
+  final List<GymExercise> catalog;
+  final ValueChanged<String> onNameChanged;
   final VoidCallback onToggleExercise;
   final ValueChanged<int> onToggleSet;
   final VoidCallback? onSwap;
@@ -887,7 +913,11 @@ class _ExerciseCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                      GymMovePickerField(
+                        value: name == 'Extra move' ? '' : name,
+                        onChanged: onNameChanged,
+                        catalog: catalog,
+                      ),
                       Text(
                         [
                           item.setsLabel,

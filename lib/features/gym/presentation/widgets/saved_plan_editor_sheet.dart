@@ -1,22 +1,26 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/widgets.dart';
+import '../../../../shared/models/gym_exercise.dart';
 import '../../data/gym_labels.dart';
+import 'gym_move_picker.dart';
 
 class SavedPlanEditorSheet extends StatefulWidget {
-  const SavedPlanEditorSheet({super.key, required this.plan});
+  const SavedPlanEditorSheet({super.key, required this.plan, this.catalog = const []});
 
   final Map<String, dynamic> plan;
+  final List<GymExercise> catalog;
 
   static Future<Map<String, dynamic>?> show(
     BuildContext context,
-    Map<String, dynamic> plan,
-  ) {
+    Map<String, dynamic> plan, {
+    List<GymExercise> catalog = const [],
+  }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => SavedPlanEditorSheet(plan: plan),
+      builder: (context) => SavedPlanEditorSheet(plan: plan, catalog: catalog),
     );
   }
 
@@ -129,9 +133,11 @@ class _SavedPlanEditorSheetState extends State<SavedPlanEditorSheet> {
                                         Expanded(
                                           child: Column(
                                             children: [
-                                              TextField(
-                                                controller: day.exercises[i].name,
-                                                decoration: const InputDecoration(labelText: 'Move'),
+                                              GymMovePickerField(
+                                                value: day.exercises[i].name.text,
+                                                onChanged: (name) =>
+                                                    day.exercises[i].name.text = name,
+                                                catalog: widget.catalog,
                                               ),
                                               TextField(
                                                 controller: day.exercises[i].sets,

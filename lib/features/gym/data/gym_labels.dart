@@ -297,6 +297,41 @@ GymExercise? findRelatedExerciseMatch(String name, List<GymExercise> exercises) 
   return best;
 }
 
+List<GymExercise> filterGymMoveCatalog(
+  String query,
+  List<GymExercise> items, {
+  int limit = 40,
+}) {
+  final q = query.trim().toLowerCase();
+  final ranked = <({GymExercise item, int score})>[];
+  for (final item in items) {
+    final name = item.name.toLowerCase();
+    final muscle = item.muscleGroup.toLowerCase();
+    final gear = item.equipment.toLowerCase();
+    var score = 0;
+    if (q.isEmpty) {
+      score = 1;
+    } else if (name == q) {
+      score = 100;
+    } else if (name.startsWith(q)) {
+      score = 80;
+    } else if (name.contains(q)) {
+      score = 60;
+    } else if (muscle.contains(q) || gear.contains(q)) {
+      score = 30;
+    }
+    if (score > 0) ranked.add((item: item, score: score));
+  }
+  ranked.sort((a, b) {
+    final byScore = b.score.compareTo(a.score);
+    if (byScore != 0) return byScore;
+    return a.item.name.toLowerCase().compareTo(b.item.name.toLowerCase());
+  });
+  return [
+    for (final row in ranked.take(limit < 1 ? 1 : limit)) row.item,
+  ];
+}
+
 /// Mirrors web sanitize for avoid targets (allowlist only).
 List<String> sanitizeAvoidTargets(Iterable<String> input) {
   final allow = gymAvoidTargets.toSet();
