@@ -64,6 +64,14 @@ class _RunnerItem {
   final String? swap;
 }
 
+class _MoveMeta {
+  const _MoveMeta({required this.setsLabel, required this.rest, required this.restSeconds});
+
+  final String setsLabel;
+  final String rest;
+  final int restSeconds;
+}
+
 class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     with WidgetsBindingObserver {
   int? _planId;
@@ -76,12 +84,16 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
   bool _restored = false;
   List<_RunnerItem> _extras = [];
   List<GymExercise> _catalog = const [];
+  final List<String> _removedKeys = [];
+  final Map<String, _MoveMeta> _meta = {};
 
   Timer? _ticker;
   Timer? _syncTimer;
   int? _restEndsAtMs;
   int _restTotal = 0;
   String? _restLabel;
+  String _restKind = 'rest';
+  bool _alarmArmed = false;
 
   @override
   void initState() {
@@ -182,8 +194,38 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
 
   List<_RunnerItem> get _items {
     final day = _sessionDay;
-    if (day == null) return List.unmodifiable(_extras);
-    return [..._buildItems(day), ..._extras];
+    final base = [
+      if (day != null) ..._buildItems(day),
+      ..._extras,
+    ].where((item) => !_removedKeys.contains(item.key)).toList();
+    return [
+      for (final item in base)
+        _withMeta(item),
+    ];
+  }
+
+  _RunnerItem _withMeta(_RunnerItem item) {
+    final over = _meta[item.key];
+    final row = _checks[item.key];
+    final setCount = [
+      over != null ? parseSetCount(over.setsLabel) : item.setCount,
+      row?.length ?? 0,
+      1,
+    ].reduce((a, b) => a > b ? a : b);
+    if (over == null && setCount == item.setCount) return item;
+    return _RunnerItem(
+      key: item.key,
+      name: item.name,
+      originalName: item.originalName,
+      setsLabel: over?.setsLabel ?? item.setsLabel,
+      rest: over?.rest ?? item.rest,
+      restSeconds: over?.restSeconds ?? item.restSeconds,
+      setCount: setCount,
+      kind: item.kind,
+      weight: item.weight,
+      notes: item.notes,
+      swap: item.swap,
+    );
   }
 
   List<_RunnerItem> _buildItems(Map<String, dynamic> day) {
@@ -259,6 +301,8 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
 
   void _resetFromPlan() {
     _extras = [];
+    _removedKeys.clear();
+    _meta.clear();
     final items = _items;
     _checks = {
       for (final item in items) item.key: List<bool>.filled(item.setCount, false),
@@ -286,11 +330,24 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       'checks': _checks,
       'names': _names,
       'weights': _weights,
+      'extras': [
+        for (final item in _extras)
+          {
+            'key': item.key,
+            'name': _names[item.key] ?? item.name,
+            'setsLabel': _meta[item.key]?.setsLabel ?? item.setsLabel,
+            'rest': _meta[item.key]?.rest ?? item.rest,
+            'setCount': item.setCount,
+            'restSeconds': _meta[item.key]?.restSeconds ?? item.restSeconds,
+          },
+      ],
+      'removed_keys': List<String>.from(_removedKeys),
       'started_at': _startedAt?.millisecondsSinceEpoch,
       'rest_ends_at': _restEndsAtMs,
       'rest_label': _restLabel,
       'rest_total': _restTotal,
       'rest_alerted': false,
+      'rest_kind': _restKind,
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -299,7 +356,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     if (_plan == null || _sessionDay == null) return;
     final payload = _sessionPayload();
     await PersistentStore.instance.writeJson(gymLiveSessionKey, payload);
-    if (!_hasProgress && _restEndsAtMs == null) return;
+    if (!_hasProgress && _restEndsAtMs == null && _extras.isEmpty && _removedKeys.isEmpty) return;
     _syncTimer?.cancel();
     _syncTimer = Timer(const Duration(milliseconds: 700), () async {
       try {
@@ -327,6 +384,58 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
   }
 
   void _applySaved(Map<String, dynamic> saved) {
+    final extrasRaw = saved['extras'];
+    _extras = [
+      if (extrasRaw is List)
+        for (final raw in extrasRaw)
+          if (raw is Map)
+            _RunnerItem(
+              key: raw['key']?.toString() ?? 'extra-${DateTime.now().millisecondsSinceEpoch}',
+              name: raw['name']?.toString() ?? 'Extra move',
+              originalName: raw['name']?.toString() ?? 'Extra move',
+              setsLabel: raw['setsLabel']?.toString() ?? raw['sets_label']?.toString() ?? '3 x 10',
+              rest: raw['rest']?.toString() ?? '60s',
+              restSeconds: (raw['restSeconds'] as num?)?.toInt() ??
+                  (raw['rest_seconds'] as num?)?.toInt() ??
+                  parseRestSeconds(raw['rest']?.toString() ?? '60s'),
+              setCount: (raw['setCount'] as num?)?.toInt() ??
+                  (raw['set_count'] as num?)?.toInt() ??
+                  parseSetCount(raw['setsLabel']?.toString() ?? '3 x 10'),
+              kind: 'addon',
+            ),
+    ];
+    if (_extras.isEmpty && saved['checks'] is Map) {
+      final checksMap = saved['checks'] as Map;
+      final namesMap = saved['names'] is Map ? saved['names'] as Map : const {};
+      _extras = [
+        for (final entry in checksMap.entries)
+          if (entry.key.toString().startsWith('extra-'))
+            _RunnerItem(
+              key: entry.key.toString(),
+              name: namesMap[entry.key]?.toString() ?? 'Extra move',
+              originalName: namesMap[entry.key]?.toString() ?? 'Extra move',
+              setsLabel: '3 x 10',
+              rest: '60s',
+              restSeconds: 60,
+              setCount: entry.value is List ? (entry.value as List).length.clamp(1, 10) : 3,
+              kind: 'addon',
+            ),
+      ];
+    }
+    _removedKeys
+      ..clear()
+      ..addAll([
+        if (saved['removed_keys'] is List)
+          for (final key in saved['removed_keys'] as List) key.toString(),
+      ]);
+    _meta.clear();
+    for (final item in _extras) {
+      _meta[item.key] = _MoveMeta(
+        setsLabel: item.setsLabel,
+        rest: item.rest,
+        restSeconds: item.restSeconds,
+      );
+    }
     final items = _items;
     _checks = {
       for (final item in items)
@@ -336,6 +445,14 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
           return false;
         }),
     };
+    for (final item in items) {
+      final row = saved['checks'] is Map ? (saved['checks'] as Map)[item.key] : null;
+      if (row is List && row.length > (_checks[item.key]?.length ?? 0)) {
+        _checks[item.key] = [
+          for (var i = 0; i < row.length; i++) row[i] == true,
+        ];
+      }
+    }
     final names = saved['names'];
     if (names is Map) {
       for (final item in items) {
@@ -369,6 +486,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     }
     _restLabel = saved['rest_label']?.toString();
     _restTotal = (saved['rest_total'] as num?)?.toInt() ?? _restLeft;
+    _restKind = saved['rest_kind']?.toString() == 'work' ? 'work' : 'rest';
     _restored = _hasProgress;
     _catchUpRest();
   }
@@ -397,13 +515,15 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     if (_restEndsAtMs == null) return;
     if (_restLeft > 0) return;
     final label = _restLabel;
+    final kind = _restKind;
     _ticker?.cancel();
     _restEndsAtMs = null;
     _restLabel = null;
     _restTotal = 0;
+    _alarmArmed = false;
     GymRestAlert.fire();
     if (label != null && mounted) {
-      context.showSuccess('Rest done — next set');
+      context.showSuccess(kind == 'work' ? 'Time’s up — nice work' : 'Rest done — next set');
     }
   }
 
@@ -414,10 +534,16 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
         timer.cancel();
         return;
       }
-      if (_restLeft <= 0) {
+      if (_restEndsAtMs != null && _restLeft <= 0) {
         timer.cancel();
+        if (_alarmArmed) return;
+        _alarmArmed = true;
         _catchUpRest();
         setState(() {});
+        return;
+      }
+      if (_restEndsAtMs == null && _startedAt == null) {
+        timer.cancel();
         return;
       }
       setState(() {});
@@ -437,13 +563,16 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     return mins.clamp(5, 180);
   }
 
-  void _startRest(int seconds, String label) {
+  void _startRest(int seconds, String label, {String kind = 'rest'}) {
     if (seconds <= 0) return;
     _ticker?.cancel();
+    _alarmArmed = false;
+    unawaited(GymRestAlert.unlock());
     setState(() {
       _restEndsAtMs = restEndsAtFromSeconds(seconds);
       _restTotal = seconds;
       _restLabel = label;
+      _restKind = kind;
     });
     _resumeTicker();
     _persistSession();
@@ -451,12 +580,36 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
 
   void _skipRest() {
     _ticker?.cancel();
+    _alarmArmed = true;
     setState(() {
       _restEndsAtMs = null;
       _restLabel = null;
       _restTotal = 0;
     });
+    if (_startedAt != null) _resumeTicker();
     _persistSession();
+  }
+
+  void _beginSet(_RunnerItem item) {
+    unawaited(GymRestAlert.unlock());
+    GymRestAlert.tick();
+    _startedAt ??= DateTime.now();
+    _resumeTicker();
+    final displayName = _names[item.key] ?? item.name;
+    final timed = parseTimedMinutes(_meta[item.key]?.setsLabel ?? item.setsLabel);
+    if (timed != null && isCardioGymMove(displayName)) {
+      _startRest(timed * 60, displayName, kind: 'work');
+      return;
+    }
+    final stillOpen = _items.any((row) {
+      final rowChecks = _checks[row.key] ?? const <bool>[];
+      return rowChecks.any((on) => !on);
+    });
+    if (item.restSeconds > 0 && stillOpen) {
+      _startRest(item.restSeconds, displayName);
+    } else {
+      _persistSession();
+    }
   }
 
   void _toggleSet(_RunnerItem item, int index) {
@@ -464,16 +617,13 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     current[index] = !current[index];
     setState(() {
       _checks[item.key] = current;
-      _startedAt ??= DateTime.now();
+      if (current[index]) _startedAt ??= DateTime.now();
     });
-    _persistSession();
-    if (!current[index]) return;
-    GymRestAlert.tick();
-    final stillOpen = _items.any((row) {
-      final rowChecks = row.key == item.key ? current : (_checks[row.key] ?? const <bool>[]);
-      return rowChecks.any((on) => !on);
-    });
-    if (stillOpen) _startRest(item.restSeconds, _names[item.key] ?? item.name);
+    if (!current[index]) {
+      _persistSession();
+      return;
+    }
+    _beginSet(item);
   }
 
   void _toggleExercise(_RunnerItem item) {
@@ -483,29 +633,61 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       _checks[item.key] = List<bool>.filled(item.setCount, !allOn);
       if (!allOn) _startedAt ??= DateTime.now();
     });
+    if (allOn) {
+      _persistSession();
+      return;
+    }
+    _beginSet(item);
+  }
+
+  void _applyMoveName(_RunnerItem item, String name) {
+    final previous = _names[item.key] ?? item.name;
+    final next = nextGymMovePrescription(
+      name,
+      currentSets: _meta[item.key]?.setsLabel ?? item.setsLabel,
+      currentRest: _meta[item.key]?.rest ?? item.rest,
+      currentWeight: _weights[item.key],
+      previousName: previous,
+      level: _plan?['level']?.toString(),
+      bodyWeightKg: _bodyWeightKg,
+      catalog: _catalog,
+    );
+    final restSeconds = parseRestSeconds(next.rest);
+    final setCount = parseSetCount(next.sets);
+    setState(() {
+      _names[item.key] = name;
+      _weights[item.key] = next.weight;
+      _meta[item.key] = _MoveMeta(setsLabel: next.sets, rest: next.rest, restSeconds: restSeconds);
+      final row = _checks[item.key] ?? const <bool>[];
+      _checks[item.key] = List<bool>.generate(setCount, (i) => i < row.length && row[i]);
+      if (item.key.startsWith('extra-')) {
+        _extras = [
+          for (final row in _extras)
+            if (row.key == item.key)
+              _RunnerItem(
+                key: row.key,
+                name: name,
+                originalName: name,
+                setsLabel: next.sets,
+                rest: next.rest,
+                restSeconds: restSeconds,
+                setCount: setCount,
+                kind: row.kind,
+              )
+            else
+              row,
+        ];
+      }
+    });
     _persistSession();
-    if (allOn) return;
-    GymRestAlert.tick();
-    _startRest(item.restSeconds, _names[item.key] ?? item.name);
   }
 
   void _swap(_RunnerItem item) {
     final swap = item.swap;
     if (swap == null) return;
-    setState(() {
-      final current = _names[item.key] ?? item.name;
-      final next = current == item.originalName ? swap : item.originalName;
-      _names[item.key] = next;
-      _weights[item.key] = nextGymMoveWeight(
-        next,
-        currentWeight: _weights[item.key],
-        previousName: current,
-        level: _plan?['level']?.toString(),
-        bodyWeightKg: _bodyWeightKg,
-        catalog: _catalog,
-      );
-    });
-    _persistSession();
+    final current = _names[item.key] ?? item.name;
+    final next = current == item.originalName ? swap : item.originalName;
+    _applyMoveName(item, next);
   }
 
   void _addExtra() {
@@ -525,6 +707,91 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       _checks[key] = List<bool>.filled(3, false);
       _names[key] = 'Extra move';
       _weights[key] = '';
+      _meta[key] = const _MoveMeta(setsLabel: '3 x 10', rest: '60s', restSeconds: 60);
+    });
+    _persistSession();
+  }
+
+  void _removeMove(_RunnerItem item) {
+    setState(() {
+      _checks.remove(item.key);
+      _names.remove(item.key);
+      _weights.remove(item.key);
+      _meta.remove(item.key);
+      if (item.key.startsWith('extra-')) {
+        _extras = _extras.where((row) => row.key != item.key).toList();
+      } else if (!_removedKeys.contains(item.key)) {
+        _removedKeys.add(item.key);
+      }
+    });
+    _persistSession();
+  }
+
+  String _repsFromSets(String sets) {
+    final match = RegExp(r'[x×]\s*(\d+(?:\s*[-–]\s*\d+)?)', caseSensitive: false).firstMatch(sets);
+    return match?.group(1)?.replaceAll(RegExp(r'\s+'), '') ?? '10';
+  }
+
+  void _nudgeMinutes(_RunnerItem item, int delta) {
+    final current = parseTimedMinutes(_meta[item.key]?.setsLabel ?? item.setsLabel) ?? 10;
+    final next = (current + delta).clamp(5, 90);
+    final setsLabel = '$next mins';
+    setState(() {
+      _meta[item.key] = _MoveMeta(setsLabel: setsLabel, rest: '0s', restSeconds: 0);
+      _checks[item.key] = _checks[item.key]?.isNotEmpty == true ? _checks[item.key]! : [false];
+      if (item.key.startsWith('extra-')) {
+        _extras = [
+          for (final row in _extras)
+            if (row.key == item.key)
+              _RunnerItem(
+                key: row.key,
+                name: row.name,
+                originalName: row.originalName,
+                setsLabel: setsLabel,
+                rest: '0s',
+                restSeconds: 0,
+                setCount: 1,
+                kind: row.kind,
+              )
+            else
+              row,
+        ];
+      }
+    });
+    _persistSession();
+  }
+
+  void _addSet(_RunnerItem item) {
+    if (parseTimedMinutes(_meta[item.key]?.setsLabel ?? item.setsLabel) != null) {
+      _nudgeMinutes(item, 5);
+      return;
+    }
+    final current = List<bool>.from(_checks[item.key] ?? List<bool>.filled(item.setCount, false));
+    if (current.length >= 10) return;
+    current.add(false);
+    final setsLabel = '${current.length} x ${_repsFromSets(_meta[item.key]?.setsLabel ?? item.setsLabel)}';
+    final rest = _meta[item.key]?.rest ?? item.rest;
+    setState(() {
+      _checks[item.key] = current;
+      _meta[item.key] = _MoveMeta(setsLabel: setsLabel, rest: rest, restSeconds: parseRestSeconds(rest));
+      if (item.key.startsWith('extra-')) {
+        _extras = [
+          for (final row in _extras)
+            if (row.key == item.key)
+              _RunnerItem(
+                key: row.key,
+                name: row.name,
+                originalName: row.originalName,
+                setsLabel: setsLabel,
+                rest: rest,
+                restSeconds: parseRestSeconds(rest),
+                setCount: current.length,
+                kind: row.kind,
+              )
+            else
+              row,
+        ];
+      }
     });
     _persistSession();
   }
@@ -587,8 +854,8 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       if (completed == 0) continue;
       logged.add({
         'name': _names[item.key] ?? item.name,
-        'sets': item.setsLabel,
-        'rest': item.rest,
+        'sets': _meta[item.key]?.setsLabel ?? item.setsLabel,
+        'rest': _meta[item.key]?.rest ?? item.rest,
         if ((_weights[item.key] ?? item.weight ?? '').trim().isNotEmpty)
           'weight': (_weights[item.key] ?? item.weight)!.trim(),
         'done': completed >= item.setCount,
@@ -713,7 +980,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Check off each set. Rest starts from the program — skip anytime. Leave and come back: your sets and rest timer stay.',
+            'Check off each set. Rest starts from the program — skip anytime. Swipe a move left or right to remove it. Leave and come back: your sets and rest timer stay.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (_restored) ...[
@@ -841,7 +1108,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'REST · $_restLabel',
+                          ' ${_restKind == 'work' ? 'WORK' : 'REST'} · $_restLabel',
                           style: TextStyle(
                             color: c.solidFg.withValues(alpha: 0.7),
                             fontSize: 10,
@@ -882,34 +1149,51 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
           ],
           const SizedBox(height: 12),
           for (final item in items) ...[
-            _ExerciseCard(
+            Dismissible(
+              key: ValueKey(item.key),
+              direction: DismissDirection.horizontal,
+              onDismissed: (_) => _removeMove(item),
+              background: Container(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFB42318),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  'Remove',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                ),
+              ),
+              secondaryBackground: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFB42318),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  'Remove',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                ),
+              ),
+              child: _ExerciseCard(
               item: item,
               name: displayGymMoveName(_names[item.key] ?? item.name),
               weight: _weights[item.key] ?? item.weight ?? '',
               checks: _checks[item.key] ?? const [],
               catalog: _catalog,
-              onNameChanged: (name) {
-                setState(() {
-                  final previous = _names[item.key] ?? item.name;
-                  _names[item.key] = name;
-                  _weights[item.key] = nextGymMoveWeight(
-                    name,
-                    currentWeight: _weights[item.key],
-                    previousName: previous,
-                    level: _plan?['level']?.toString(),
-                    bodyWeightKg: _bodyWeightKg,
-                    catalog: _catalog,
-                  );
-                });
-                _persistSession();
-              },
+              onNameChanged: (name) => _applyMoveName(item, name),
               onWeightChanged: (value) {
                 setState(() => _weights[item.key] = value);
                 _persistSession();
               },
               onToggleExercise: () => _toggleExercise(item),
               onToggleSet: (index) => _toggleSet(item, index),
+              onAddSet: () => _addSet(item),
+              onNudgeMinutes: (delta) => _nudgeMinutes(item, delta),
               onSwap: item.swap == null ? null : () => _swap(item),
+            ),
             ),
             const SizedBox(height: 10),
           ],
@@ -942,6 +1226,8 @@ class _ExerciseCard extends StatelessWidget {
     required this.onWeightChanged,
     required this.onToggleExercise,
     required this.onToggleSet,
+    required this.onAddSet,
+    required this.onNudgeMinutes,
     this.onSwap,
   });
 
@@ -954,12 +1240,16 @@ class _ExerciseCard extends StatelessWidget {
   final ValueChanged<String> onWeightChanged;
   final VoidCallback onToggleExercise;
   final ValueChanged<int> onToggleSet;
+  final VoidCallback onAddSet;
+  final ValueChanged<int> onNudgeMinutes;
   final VoidCallback? onSwap;
 
   @override
   Widget build(BuildContext context) {
     final c = VivrantColors.of(context);
     final complete = checks.isNotEmpty && checks.every((on) => on);
+    final timed = parseTimedMinutes(item.setsLabel);
+    final cardio = isCardioGymMove(name);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -992,7 +1282,11 @@ class _ExerciseCard extends StatelessWidget {
                         catalog: catalog,
                       ),
                       const SizedBox(height: 6),
-                      _SessionWeightField(value: weight, onChanged: onWeightChanged),
+                      _SessionWeightField(
+                        value: weight,
+                        onChanged: onWeightChanged,
+                        label: cardio ? 'Pace' : 'Weight',
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         [
@@ -1019,12 +1313,23 @@ class _ExerciseCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (var i = 0; i < checks.length; i++)
+                if (timed != null) ...[
                   FilterChip(
-                    label: Text('Set ${i + 1}'),
-                    selected: checks[i],
-                    onSelected: (_) => onToggleSet(i),
+                    label: Text(checks.isNotEmpty && checks.first ? '$timed min done' : 'Start $timed min'),
+                    selected: checks.isNotEmpty && checks.first,
+                    onSelected: (_) => onToggleSet(0),
                   ),
+                  ActionChip(label: const Text('−5'), onPressed: () => onNudgeMinutes(-5)),
+                  ActionChip(label: const Text('+5'), onPressed: () => onNudgeMinutes(5)),
+                ] else ...[
+                  for (var i = 0; i < checks.length; i++)
+                    FilterChip(
+                      label: Text('Set ${i + 1}'),
+                      selected: checks[i],
+                      onSelected: (_) => onToggleSet(i),
+                    ),
+                  ActionChip(label: const Text('+ Set'), onPressed: onAddSet),
+                ],
               ],
             ),
           ),
@@ -1045,10 +1350,15 @@ class _ExerciseCard extends StatelessWidget {
 }
 
 class _SessionWeightField extends StatefulWidget {
-  const _SessionWeightField({required this.value, required this.onChanged});
+  const _SessionWeightField({
+    required this.value,
+    required this.onChanged,
+    this.label = 'Weight',
+  });
 
   final String value;
   final ValueChanged<String> onChanged;
+  final String label;
 
   @override
   State<_SessionWeightField> createState() => _SessionWeightFieldState();
@@ -1084,7 +1394,7 @@ class _SessionWeightFieldState extends State<_SessionWeightField> {
   Widget build(BuildContext context) {
     return TextField(
       controller: _controller,
-      decoration: const InputDecoration(labelText: 'Weight', isDense: true),
+      decoration: InputDecoration(labelText: widget.label, isDense: true),
       onChanged: widget.onChanged,
     );
   }

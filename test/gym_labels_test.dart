@@ -158,6 +158,13 @@ void main() {
       expect(restRemainingSeconds(ends, now.add(const Duration(seconds: 30))), 60);
       expect(restRemainingSeconds(ends, now.add(const Duration(seconds: 120))), 0);
     });
+
+    test('keeps a 12 minute work clock without clipping to 10:00', () {
+      expect(formatRestClock(600), '10:00');
+      expect(formatRestClock(720), '12:00');
+      final now = DateTime.fromMillisecondsSinceEpoch(1_000_000);
+      expect(restEndsAtFromSeconds(720, now) - now.millisecondsSinceEpoch, 720 * 1000);
+    });
   });
 
   group('custom move formatting', () {
@@ -262,6 +269,24 @@ void main() {
     test('labels cardio and bodyweight moves', () {
       expect(suggestGymMoveWeight('Treadmill incline walk'), 'easy pace');
       expect(suggestGymMoveWeight('Bodyweight Squat'), 'bodyweight');
+    });
+
+    test('auto-fills treadmill minutes when the move changes', () {
+      expect(isCardioGymMove('Treadmill'), isTrue);
+      expect(parseTimedMinutes('10 mins'), 10);
+      expect(parseTimedMinutes('3 x 10'), isNull);
+      final next = nextGymMovePrescription(
+        'Treadmill',
+        currentSets: '3 x 10',
+        currentRest: '60s',
+        currentWeight: '40 kg',
+        previousName: 'Chest Press Machine',
+        level: 'beginner',
+        bodyWeightKg: 70,
+      );
+      expect(next.sets, '10 mins');
+      expect(next.rest, '0s');
+      expect(next.weight, 'easy pace');
     });
 
     test('sizes isolation vs compound loads from body weight and program level', () {

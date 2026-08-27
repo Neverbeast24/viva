@@ -222,7 +222,27 @@ class _DayEditorSheetState extends State<_DayEditorSheet> {
           ),
           const SizedBox(height: 12),
           for (var i = 0; i < _exercises.length; i++)
-            Padding(
+            Dismissible(
+              key: ValueKey(_exercises[i]),
+              direction: DismissDirection.horizontal,
+              onDismissed: (_) {
+                final draft = _exercises[i];
+                setState(() => _exercises.remove(draft));
+                draft.dispose();
+              },
+              background: Container(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                color: const Color(0xFFB42318),
+                child: const Text('Remove', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+              ),
+              secondaryBackground: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                color: const Color(0xFFB42318),
+                child: const Text('Remove', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+              ),
+              child: Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: [
@@ -234,20 +254,25 @@ class _DayEditorSheetState extends State<_DayEditorSheet> {
                           onChanged: (name) {
                             final previous = _exercises[i].name.text;
                             _exercises[i].name.text = name;
-                            _exercises[i].weight.text = nextGymMoveWeight(
+                            final next = nextGymMovePrescription(
                               name,
+                              currentSets: _exercises[i].sets.text,
+                              currentRest: _exercises[i].rest.text,
                               currentWeight: _exercises[i].weight.text,
                               previousName: previous,
                               level: widget.level,
                               bodyWeightKg: widget.bodyWeightKg,
                               catalog: widget.catalog,
                             );
+                            _exercises[i].sets.text = next.sets;
+                            _exercises[i].rest.text = next.rest;
+                            _exercises[i].weight.text = next.weight;
                           },
                           catalog: widget.catalog,
                         ),
                         TextField(
                           controller: _exercises[i].sets,
-                          decoration: const InputDecoration(labelText: 'Sets'),
+                          decoration: const InputDecoration(labelText: 'Sets or mins'),
                         ),
                         TextField(
                           controller: _exercises[i].weight,
@@ -278,6 +303,7 @@ class _DayEditorSheetState extends State<_DayEditorSheet> {
                   ),
                 ],
               ),
+            ),
             ),
           if (_exercises.length < 6)
             TextButton.icon(

@@ -370,11 +370,11 @@ String _formatGymKgWindow(double bodyKg, double loPct, double hiPct) {
   return '$lo–$hi kg';
 }
 
-bool _isCardioGymMove(String name, String? equipment) {
+bool isCardioGymMove(String name, [String? equipment]) {
   final gear = (equipment ?? '').toLowerCase();
   if (gear == 'cardio_machine' || gear == 'cardio') return true;
   return RegExp(
-    r'\b(treadmill|elliptical|bike|cycle|row(?:er|ing)?|climber|stair|intervals?|incline walk)\b',
+    r'\b(treadmill|elliptical|bike|cycle|row(?:er|ing)?|climber|stair|ski(?:\s|-)?erg|assault bike|intervals?|incline walk)\b',
   ).hasMatch(name.toLowerCase());
 }
 
@@ -412,7 +412,7 @@ String suggestGymMoveWeight(
   final gear = (equipment != null && equipment.isNotEmpty)
       ? equipment
       : (match?.equipment ?? inferCustomEquipment(trimmed));
-  if (_isCardioGymMove(trimmed, gear)) return 'easy pace';
+  if (isCardioGymMove(trimmed, gear)) return 'easy pace';
   if (_isBodyweightGymMove(trimmed, gear)) return 'bodyweight';
   final band = _gymLoadBands[_gymLoadLevel(level)]!;
   final pct = _isIsolationGymMove(trimmed) ? band[0] : band[1];
@@ -449,6 +449,93 @@ String nextGymMoveWeight(
         );
   if (current == previousSuggested) return suggested;
   return current;
+}
+
+String suggestGymMoveSets(
+  String name, {
+  String? equipment,
+  List<GymExercise> catalog = const [],
+}) {
+  final trimmed = name.trim();
+  if (trimmed.isEmpty || RegExp(r'^extra move$', caseSensitive: false).hasMatch(trimmed)) {
+    return '3 x 10';
+  }
+  final match = findExerciseMatch(trimmed, catalog);
+  final gear = (equipment != null && equipment.isNotEmpty) ? equipment : match?.equipment;
+  if (!isCardioGymMove(trimmed, gear)) return '3 x 10';
+  final secs = match?.durationSeconds ?? 0;
+  final mins = secs >= 60 ? (secs / 60).round() : 10;
+  return '${mins.clamp(5, 60)} mins';
+}
+
+String suggestGymMoveRest(
+  String name, {
+  String? equipment,
+  List<GymExercise> catalog = const [],
+}) {
+  final trimmed = name.trim();
+  if (trimmed.isEmpty || RegExp(r'^extra move$', caseSensitive: false).hasMatch(trimmed)) {
+    return '60s';
+  }
+  final match = findExerciseMatch(trimmed, catalog);
+  final gear = (equipment != null && equipment.isNotEmpty) ? equipment : match?.equipment;
+  return isCardioGymMove(trimmed, gear) ? '0s' : '60s';
+}
+
+({String sets, String rest, String weight}) nextGymMovePrescription(
+  String name, {
+  String? currentSets,
+  String? currentRest,
+  String? currentWeight,
+  String? previousName,
+  String? level,
+  double? bodyWeightKg,
+  String? equipment,
+  List<GymExercise> catalog = const [],
+}) {
+  final nextCardio = isCardioGymMove(name, equipment);
+  final prevCardio = (previousName ?? '').trim().isEmpty
+      ? !nextCardio
+      : isCardioGymMove(previousName!, equipment);
+  final weight = nextCardio != prevCardio
+      ? suggestGymMoveWeight(
+          name,
+          level: level,
+          bodyWeightKg: bodyWeightKg,
+          equipment: equipment,
+          catalog: catalog,
+        )
+      : nextGymMoveWeight(
+          name,
+          currentWeight: currentWeight,
+          previousName: previousName,
+          level: level,
+          bodyWeightKg: bodyWeightKg,
+          equipment: equipment,
+          catalog: catalog,
+        );
+  final prevSets = (previousName ?? '').trim().isEmpty
+      ? ''
+      : suggestGymMoveSets(previousName!, equipment: equipment, catalog: catalog);
+  final prevRest = (previousName ?? '').trim().isEmpty
+      ? ''
+      : suggestGymMoveRest(previousName!, equipment: equipment, catalog: catalog);
+  final setsNow = (currentSets ?? '').trim();
+  final restNow = (currentRest ?? '').trim();
+  final sets = setsNow.isEmpty ||
+          setsNow == prevSets ||
+          setsNow == '3 x 10' ||
+          nextCardio != prevCardio
+      ? suggestGymMoveSets(name, equipment: equipment, catalog: catalog)
+      : setsNow;
+  final rest = restNow.isEmpty ||
+          restNow == prevRest ||
+          restNow == '60s' ||
+          restNow == '45s' ||
+          nextCardio != prevCardio
+      ? suggestGymMoveRest(name, equipment: equipment, catalog: catalog)
+      : restNow;
+  return (sets: sets, rest: rest, weight: weight);
 }
 
 String resolveSessionMoveWeight(
@@ -1030,11 +1117,35 @@ int parseSetCount(String sets) {
       .replaceAll(RegExp(r'[–—]'), '-')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
+  if (parseTimedMinutes(raw) != null &&
+      !RegExp(r'(\d+)\s*[x×]').hasMatch(raw) &&
+      !RegExp(r'(\d+)\s*sets?\b').hasMatch(raw)) {
+    return 1;
+  }
   final x = RegExp(r'(\d+)\s*[x×]').firstMatch(raw);
   if (x != null) return int.parse(x.group(1)!).clamp(1, 10);
   final word = RegExp(r'(\d+)\s*sets?\b').firstMatch(raw);
   if (word != null) return int.parse(word.group(1)!).clamp(1, 10);
   return 1;
+}
+
+int? parseTimedMinutes(String sets) {
+  final raw = sets
+      .toLowerCase()
+      .replaceAll(RegExp(r'[–—]'), '-')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (raw.isEmpty) return null;
+  if (RegExp(r'(\d+)\s*[x×]').hasMatch(raw) && !RegExp(r'\b(m|min|mins|minutes)\b').hasMatch(raw)) {
+    return null;
+  }
+  final match = RegExp(
+    r'(\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*(?:m|min|mins|minutes)\b',
+  ).firstMatch(raw);
+  if (match == null) return null;
+  final n = double.tryParse(match.group(1)!);
+  if (n == null || n <= 0) return null;
+  return n.round().clamp(1, 180);
 }
 
 const gymSessionFocuses = <String>[
@@ -1073,7 +1184,7 @@ String gymSessionFocusFromPlan(String focus) {
 }
 
 String formatRestClock(int totalSeconds) {
-  final s = totalSeconds.clamp(0, 600);
+  final s = totalSeconds.clamp(0, 10800);
   final m = s ~/ 60;
   final r = s % 60;
   return '$m:${r.toString().padLeft(2, '0')}';
@@ -1313,7 +1424,7 @@ int restRemainingSeconds(int? restEndsAtMs, [DateTime? now]) {
 }
 
 int restEndsAtFromSeconds(int remaining, [DateTime? now]) {
-  return (now ?? DateTime.now()).millisecondsSinceEpoch + remaining.clamp(0, 600) * 1000;
+  return (now ?? DateTime.now()).millisecondsSinceEpoch + remaining.clamp(0, 10800) * 1000;
 }
 
 String todaySessionDate([DateTime? date]) {

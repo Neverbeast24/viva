@@ -149,20 +149,25 @@ class _SavedPlanEditorSheetState extends State<SavedPlanEditorSheet> {
                                                 onChanged: (name) {
                                                   final previous = day.exercises[i].name.text;
                                                   day.exercises[i].name.text = name;
-                                                  day.exercises[i].weight.text = nextGymMoveWeight(
+                                                  final next = nextGymMovePrescription(
                                                     name,
+                                                    currentSets: day.exercises[i].sets.text,
+                                                    currentRest: day.exercises[i].rest.text,
                                                     currentWeight: day.exercises[i].weight.text,
                                                     previousName: previous,
                                                     level: widget.plan['level']?.toString(),
                                                     bodyWeightKg: widget.bodyWeightKg,
                                                     catalog: widget.catalog,
                                                   );
+                                                  day.exercises[i].sets.text = next.sets;
+                                                  day.exercises[i].rest.text = next.rest;
+                                                  day.exercises[i].weight.text = next.weight;
                                                 },
                                                 catalog: widget.catalog,
                                               ),
                                               TextField(
                                                 controller: day.exercises[i].sets,
-                                                decoration: const InputDecoration(labelText: 'Sets'),
+                                                decoration: const InputDecoration(labelText: 'Sets or mins'),
                                               ),
                                               TextField(
                                                 controller: day.exercises[i].weight,
