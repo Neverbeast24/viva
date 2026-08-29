@@ -17,7 +17,8 @@ class SpendingSheetScreen extends ConsumerStatefulWidget {
       _SpendingSheetScreenState();
 }
 
-class _SpendingSheetScreenState extends ConsumerState<SpendingSheetScreen> {
+class _SpendingSheetScreenState extends ConsumerState<SpendingSheetScreen>
+    with SelectableIdsMixin {
   final _title = TextEditingController();
   final _amount = TextEditingController();
   List<Expense> _expenses = [];
@@ -118,6 +119,20 @@ class _SpendingSheetScreenState extends ConsumerState<SpendingSheetScreen> {
         title: const Text('Spending sheet'),
         actions: [
           if (_expenses.isNotEmpty) ShareExportButton(doc: expensesDoc(_expenses)),
+          ...selectAppBarActions(
+            visibleIds: _expenses.map((e) => e.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'expenses',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _expenses = _expenses.where((e) => !ids.contains(e.id)).toList();
+                });
+              },
+            ),
+          ),
           IconButton(
             onPressed: () => context.push('/spending/log'),
             icon: const Icon(Icons.add),
@@ -159,10 +174,21 @@ class _SpendingSheetScreenState extends ConsumerState<SpendingSheetScreen> {
             else
               ExcelTable(
                 highlightLastRow: true,
-                headers: const ['Expense', 'Category', '₱', ''],
+                headers: [
+                  if (selecting) '',
+                  'Expense',
+                  'Category',
+                  '₱',
+                  '',
+                ],
                 rows: [
                   for (final e in _expenses)
                     [
+                      if (selecting)
+                        Checkbox(
+                          value: selectedIds.contains(e.id),
+                          onChanged: (_) => toggleSelected(e.id),
+                        ),
                       Text(e.title, style: const TextStyle(fontWeight: FontWeight.w700)),
                       Text(e.category),
                       Text('₱${e.amount.round()}'),
@@ -184,6 +210,7 @@ class _SpendingSheetScreenState extends ConsumerState<SpendingSheetScreen> {
                       ),
                     ],
                   [
+                    if (selecting) const SizedBox.shrink(),
                     ExcelCellField(
                       controller: _title,
                       hint: 'New expense',

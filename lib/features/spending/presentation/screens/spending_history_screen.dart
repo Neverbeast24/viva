@@ -20,7 +20,8 @@ class SpendingHistoryScreen extends ConsumerStatefulWidget {
       _SpendingHistoryScreenState();
 }
 
-class _SpendingHistoryScreenState extends ConsumerState<SpendingHistoryScreen> {
+class _SpendingHistoryScreenState extends ConsumerState<SpendingHistoryScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   Map<String, dynamic>? _overview;
   List<Expense> _expenses = [];
@@ -119,6 +120,22 @@ class _SpendingHistoryScreenState extends ConsumerState<SpendingHistoryScreen> {
         actions: [
           if (_expenses.isNotEmpty)
             ShareExportButton(doc: expensesDoc(_expenses)),
+          ...selectAppBarActions(
+            visibleIds: _expenses.map((e) => e.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'expenses',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _expenses =
+                      _expenses.where((e) => !ids.contains(e.id)).toList();
+                });
+                _cache();
+              },
+            ),
+          ),
           IconButton(
             onPressed: () => context.push('/spending/log'),
             icon: const Icon(Icons.add),
@@ -197,7 +214,39 @@ class _SpendingHistoryScreenState extends ConsumerState<SpendingHistoryScreen> {
                 ...filtered.map(
                   (e) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: VivrantPanel(
+                    child: selecting
+                        ? ListRow(
+                            selected: selectedIds.contains(e.id),
+                            leading: selectLeading(selectedIds.contains(e.id)),
+                            title: e.title,
+                            subtitle:
+                                '${e.category} · ₱${e.amount.toStringAsFixed(0)}',
+                            onTap: () => toggleSelected(e.id),
+                          )
+                        : SwipeToRemove(
+                            itemKey: ValueKey(e.id),
+                            action: 'Archive',
+                            confirmDismiss: (_) =>
+                                confirmDelete(context, label: e.title),
+                            onRemove: () async {
+                              try {
+                                await ref
+                                    .read(vivrantApiProvider)
+                                    .deleteExpense(e.id);
+                                if (!mounted) return;
+                                setState(() {
+                                  _expenses = _expenses
+                                      .where((x) => x.id != e.id)
+                                      .toList();
+                                });
+                                _cache();
+                                context.showSuccess('Expense archived');
+                              } catch (err) {
+                                if (!mounted) return;
+                                context.showError(apiErrorMessage(err));
+                              }
+                            },
+                            child: VivrantPanel(
                       child: Row(
                         children: [
                           Expanded(
@@ -277,6 +326,7 @@ class _SpendingHistoryScreenState extends ConsumerState<SpendingHistoryScreen> {
                         ],
                       ),
                     ),
+                          ),
                   ),
                 ),
             ],

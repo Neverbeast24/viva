@@ -16,7 +16,8 @@ class LogMealScreen extends ConsumerStatefulWidget {
   ConsumerState<LogMealScreen> createState() => _LogMealScreenState();
 }
 
-class _LogMealScreenState extends ConsumerState<LogMealScreen> {
+class _LogMealScreenState extends ConsumerState<LogMealScreen>
+    with SelectableIdsMixin {
   final _name = TextEditingController();
   final _cal = TextEditingController();
   final _protein = TextEditingController();
@@ -186,10 +187,24 @@ class _LogMealScreenState extends ConsumerState<LogMealScreen> {
   Widget _buildSheet() {
     return ExcelTable(
       highlightLastRow: true,
-      headers: const ['Meal', 'Type', 'Cal', 'P', 'C', 'F', ''],
+      headers: [
+        if (selecting) '',
+        'Meal',
+        'Type',
+        'Cal',
+        'P',
+        'C',
+        'F',
+        '',
+      ],
       rows: [
         for (final meal in _meals)
           [
+            if (selecting)
+              Checkbox(
+                value: selectedIds.contains(meal.id),
+                onChanged: (_) => toggleSelected(meal.id),
+              ),
             InkWell(
               onTap: () => _editMeal(meal),
               child: Text(
@@ -208,6 +223,7 @@ class _LogMealScreenState extends ConsumerState<LogMealScreen> {
             ),
           ],
         [
+          if (selecting) const SizedBox.shrink(),
           ExcelCellField(
             controller: _name,
             hint: 'New meal',
@@ -266,7 +282,25 @@ class _LogMealScreenState extends ConsumerState<LogMealScreen> {
   @override
   Widget build(BuildContext context) {
     return GradientScaffold(
-      appBar: AppBar(title: const Text('Log meal')),
+      appBar: AppBar(
+        title: const Text('Log meal'),
+        actions: [
+          ...selectAppBarActions(
+            visibleIds: _meals.map((m) => m.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'nutrition_logs',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _meals = _meals.where((m) => !ids.contains(m.id)).toList();
+                });
+              },
+            ),
+          ),
+        ],
+      ),
       child: ListView(
         padding: VivrantLayout.pagePadding,
         children: [

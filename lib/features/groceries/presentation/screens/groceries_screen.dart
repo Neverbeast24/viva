@@ -20,7 +20,8 @@ class GroceriesScreen extends ConsumerStatefulWidget {
   ConsumerState<GroceriesScreen> createState() => _GroceriesScreenState();
 }
 
-class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
+class _GroceriesScreenState extends ConsumerState<GroceriesScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   final _quickName = TextEditingController();
   final _sheetName = TextEditingController();
@@ -204,10 +205,23 @@ class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
     final rows = _filtered;
     return ExcelTable(
       highlightLastRow: true,
-      headers: const ['Buy', 'Item', 'Qty', 'Cat', '₱', ''],
+      headers: [
+        if (selecting) '',
+        'Buy',
+        'Item',
+        'Qty',
+        'Cat',
+        '₱',
+        '',
+      ],
       rows: [
         for (final item in rows)
           [
+            if (selecting)
+              Checkbox(
+                value: selectedIds.contains(item.id),
+                onChanged: (_) => toggleSelected(item.id),
+              ),
             Checkbox(
               value: item.isChecked,
               onChanged: (v) => _toggle(item, v ?? false),
@@ -236,6 +250,7 @@ class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
             ),
           ],
         [
+          if (selecting) const SizedBox.shrink(),
           const SizedBox.shrink(),
           ExcelCellField(
             controller: _sheetName,
@@ -354,9 +369,11 @@ class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
     }
   }
 
-  Future<void> _delete(GroceryItem item) async {
-    final ok = await confirmDelete(context, label: item.name);
-    if (!ok || !mounted) return;
+  Future<void> _delete(GroceryItem item, {bool confirm = true}) async {
+    if (confirm) {
+      final ok = await confirmDelete(context, label: item.name);
+      if (!ok || !mounted) return;
+    }
     final prev = List<GroceryItem>.from(_items);
     _setItems(_items.where((i) => i.id != item.id).toList());
     try {
@@ -404,6 +421,18 @@ class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
         title: const Text('Groceries'),
         actions: [
           if (_items.isNotEmpty) ShareExportButton(doc: groceryListDoc(_items)),
+          ...selectAppBarActions(
+            visibleIds: _items.map((i) => i.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'grocery_items',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                _setItems(_items.where((i) => !ids.contains(i.id)).toList());
+              },
+            ),
+          ),
           IconButton(onPressed: _add, icon: const Icon(Icons.add)),
         ],
       ),
@@ -520,7 +549,7 @@ class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
                       'No items match these filters. Try All or another search.',
                 )
               else ...[
-                if (_canReorder)
+                if (_canReorder && !selecting)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
@@ -529,20 +558,28 @@ class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
                     ),
                   ),
                 NestedReorderableColumn(
-                  enabled: _canReorder,
+                  enabled: _canReorder && !selecting,
                   itemCount: filtered.length,
                   keyOf: (i) => filtered[i].id,
                   onReorder: _reorder,
                   itemBuilder: (context, index) {
                     final item = filtered[index];
-                    return Padding(
+                    return wrapArchiveable(
+                      id: item.id,
+                      label: item.name,
+                      archive: () => _delete(item, confirm: false),
+                      child: Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: VivrantPanel(
                         child: Row(
                           children: [
                             Checkbox(
-                              value: item.isChecked,
-                              onChanged: (v) => _toggle(item, v ?? false),
+                              value: selecting
+                                  ? selectedIds.contains(item.id)
+                                  : item.isChecked,
+                              onChanged: selecting
+                                  ? (_) => toggleSelected(item.id)
+                                  : (v) => _toggle(item, v ?? false),
                             ),
                             Expanded(
                               child: Column(
@@ -577,6 +614,7 @@ class _GroceriesScreenState extends ConsumerState<GroceriesScreen> {
                           ],
                         ),
                       ),
+                    ),
                     );
                   },
                 ),

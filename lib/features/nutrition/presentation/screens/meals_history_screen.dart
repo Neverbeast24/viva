@@ -20,7 +20,8 @@ class MealsHistoryScreen extends ConsumerStatefulWidget {
   ConsumerState<MealsHistoryScreen> createState() => _MealsHistoryScreenState();
 }
 
-class _MealsHistoryScreenState extends ConsumerState<MealsHistoryScreen> {
+class _MealsHistoryScreenState extends ConsumerState<MealsHistoryScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   List<NutritionLog> _meals = [];
   bool _loading = true;
@@ -101,6 +102,23 @@ class _MealsHistoryScreenState extends ConsumerState<MealsHistoryScreen> {
         title: const Text('Meal history'),
         actions: [
           if (_meals.isNotEmpty) ShareExportButton(doc: mealsDoc(_meals)),
+          ...selectAppBarActions(
+            visibleIds: _meals.map((m) => m.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'nutrition_logs',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _meals = _meals.where((m) => !ids.contains(m.id)).toList();
+                });
+                ref
+                    .read(moduleCacheProvider)
+                    .write(ModuleCacheKeys.nutrition, _meals);
+              },
+            ),
+          ),
           IconButton(
             tooltip: 'Log meal',
             onPressed: () => context.push('/nutrition/log'),
@@ -173,7 +191,41 @@ class _MealsHistoryScreenState extends ConsumerState<MealsHistoryScreen> {
                     padding: const EdgeInsets.only(
                       bottom: VivrantLayout.itemGap,
                     ),
-                    child: Column(
+                    child: selecting
+                        ? ListRow(
+                            selected: selectedIds.contains(m.id),
+                            leading: selectLeading(selectedIds.contains(m.id)),
+                            title: m.mealName,
+                            subtitle:
+                                '${m.mealType} · ${m.calories?.toStringAsFixed(0) ?? '—'} kcal',
+                            onTap: () => toggleSelected(m.id),
+                          )
+                        : SwipeToRemove(
+                            itemKey: ValueKey(m.id),
+                            action: 'Archive',
+                            confirmDismiss: (_) =>
+                                confirmDelete(context, label: m.mealName),
+                            onRemove: () async {
+                              try {
+                                await ref
+                                    .read(vivrantApiProvider)
+                                    .deleteMeal(m.id);
+                                if (!mounted) return;
+                                setState(() {
+                                  _meals = _meals
+                                      .where((x) => x.id != m.id)
+                                      .toList();
+                                });
+                                ref
+                                    .read(moduleCacheProvider)
+                                    .write(ModuleCacheKeys.nutrition, _meals);
+                                context.showSuccess('Meal removed');
+                              } catch (e) {
+                                if (!mounted) return;
+                                context.showError(apiErrorMessage(e));
+                              }
+                            },
+                            child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         MealListTile(
@@ -281,6 +333,7 @@ class _MealsHistoryScreenState extends ConsumerState<MealsHistoryScreen> {
                         ],
                       ],
                     ),
+                          ),
                   ),
                 ),
             ],

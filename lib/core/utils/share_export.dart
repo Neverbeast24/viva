@@ -248,7 +248,7 @@ ShareExportDoc gymPlansDoc(List<Map<String, dynamic>> plans) {
           title,
           day['day'],
           humanizeLabel(day['focus']?.toString() ?? ''),
-          ex['name'],
+          displayGymMoveName(ex['name']?.toString()),
           ex['sets'],
           ex['weight'] ?? '',
           ex['rest'],
@@ -544,11 +544,24 @@ ShareExportDoc journalEntriesDoc(List<JournalEntry> entries) {
 ShareExportDoc journalNoteDoc(JournalEntry entry) => journalEntriesDoc([entry]);
 
 ShareExportDoc reportsDoc(Map<String, dynamic> data, {String? story}) {
+  final calories = data['calories'] ?? 0;
+  final protein = data['protein_g'] ?? 0;
+  final meals = data['meals'] ?? 0;
+  final workouts = data['workouts'] ?? 0;
+  final workoutMinutes = data['workout_minutes'] ?? 0;
+  final steps = data['steps'] ?? 0;
+  final water = data['water_ml'] ?? 0;
+  final spend = data['spend'] ?? 0;
+  final checkins = data['checkins'] ?? 0;
   final lines = [
-    'Calories: ${data['calories'] ?? 0}',
-    'Steps: ${data['steps'] ?? 0}',
-    'Workouts: ${data['workouts'] ?? 0}',
-    'Water: ${data['water_ml'] ?? 0} ml',
+    'Calories: $calories',
+    'Protein: ${protein}g',
+    'Meals: $meals',
+    'Workouts: $workouts · $workoutMinutes min',
+    'Steps: $steps',
+    'Water: $water ml',
+    'Health spend: ₱$spend',
+    'Check-ins: $checkins',
     if (story != null && story.isNotEmpty) ...['', 'Weekly summary', story],
   ];
   return ShareExportDoc(
@@ -557,10 +570,15 @@ ShareExportDoc reportsDoc(Map<String, dynamic> data, {String? story}) {
     text: _heading('Weekly summary', lines),
     csv: toCsv([
       ['Metric', 'Value'],
-      ['Calories', data['calories'] ?? ''],
-      ['Steps', data['steps'] ?? ''],
-      ['Workouts', data['workouts'] ?? ''],
-      ['Water ml', data['water_ml'] ?? ''],
+      ['Calories', calories],
+      ['Protein g', protein],
+      ['Meals', meals],
+      ['Workouts', workouts],
+      ['Workout minutes', workoutMinutes],
+      ['Steps', steps],
+      ['Water ml', water],
+      ['Health spend', spend],
+      ['Check-ins', checkins],
       if (story != null) ['Story', story],
     ]),
     json: _jsonEncode({...data, if (story != null) 'story': story}),

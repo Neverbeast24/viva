@@ -16,7 +16,8 @@ class ChallengesScreen extends ConsumerStatefulWidget {
   ConsumerState<ChallengesScreen> createState() => _ChallengesScreenState();
 }
 
-class _ChallengesScreenState extends ConsumerState<ChallengesScreen> {
+class _ChallengesScreenState extends ConsumerState<ChallengesScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   List<Map<String, dynamic>> _items = [];
   List<Habit> _habits = [];
@@ -141,9 +142,11 @@ class _ChallengesScreenState extends ConsumerState<ChallengesScreen> {
     }
   }
 
-  Future<void> _delete(int id) async {
-    final ok = await confirmDelete(context, label: 'this challenge');
-    if (!ok || !mounted) return;
+  Future<void> _delete(int id, {bool confirm = true}) async {
+    if (confirm) {
+      final ok = await confirmDelete(context, label: 'this challenge');
+      if (!ok || !mounted) return;
+    }
     final prev = _items.map((e) => Map<String, dynamic>.from(e)).toList();
     _setItems(
       _items.where((item) => (item['id'] as num?)?.toInt() != id).toList(),
@@ -193,6 +196,26 @@ class _ChallengesScreenState extends ConsumerState<ChallengesScreen> {
       appBar: AppBar(
         title: const Text('Challenges'),
         actions: [
+          ...selectAppBarActions(
+            visibleIds: _items
+                .map((c) => (c['id'] as num?)?.toInt())
+                .whereType<int>(),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'challenges',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _items = _items
+                      .where(
+                        (c) => !ids.contains((c['id'] as num?)?.toInt()),
+                      )
+                      .toList();
+                });
+              },
+            ),
+          ),
           IconButton(
             onPressed: _syncing ? null : _syncProgress,
             tooltip: 'Sync progress',
@@ -327,7 +350,8 @@ class _ChallengesScreenState extends ConsumerState<ChallengesScreen> {
                   final target = (c['target_value'] as num?)?.toDouble();
                   final pct = _progressPct(c);
                   final done = c['completed'] == true;
-                  return Padding(
+                  final title = c['title']?.toString() ?? 'Challenge';
+                  final card = Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: VivrantPanel(
                       child: Column(
@@ -335,9 +359,14 @@ class _ChallengesScreenState extends ConsumerState<ChallengesScreen> {
                         children: [
                           Row(
                             children: [
+                              if (selecting && id != null)
+                                Checkbox(
+                                  value: selectedIds.contains(id),
+                                  onChanged: (_) => toggleSelected(id),
+                                ),
                               Expanded(
                                 child: Text(
-                                  '${c['title']?.toString() ?? 'Challenge'}${done ? ' · Done' : ''}',
+                                  '$title${done ? ' · Done' : ''}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -377,6 +406,13 @@ class _ChallengesScreenState extends ConsumerState<ChallengesScreen> {
                         ],
                       ),
                     ),
+                  );
+                  if (id == null) return card;
+                  return wrapArchiveable(
+                    id: id,
+                    label: title,
+                    archive: () => _delete(id, confirm: false),
+                    child: card,
                   );
                 }),
             ],

@@ -23,11 +23,10 @@ extension VivrantProfileApi on VivrantApi {
   Future<String> uploadAvatar(String filePath, {String? filename}) async {
     final name = filename ?? filePath.split(RegExp(r'[\\/]')).last;
     final mime = imageMediaType(name);
-    final ext = mime.subtype == 'jpeg' ? 'jpg' : mime.subtype;
     final form = FormData.fromMap({
       'avatar': await MultipartFile.fromFile(
         filePath,
-        filename: 'avatar.$ext',
+        filename: imageUploadFilename(name, prefix: 'avatar'),
         contentType: mime,
       ),
     });
@@ -137,6 +136,29 @@ extension VivrantProfileApi on VivrantApi {
 
   Future<void> addHealthHistory(Map<String, dynamic> body) async {
     await _client.post('/api/mobile/health-history', data: body);
+  }
+
+  Future<void> deleteHealthHistory(int id) async {
+    await _client.delete('/api/mobile/health-history/$id');
+  }
+
+  Future<String> archiveItems({
+    required String entity,
+    required List<int> ids,
+  }) async {
+    final res = await _client.post<Map<String, dynamic>>(
+      '/api/mobile/archive/bulk',
+      data: {'op': 'archive', 'entity': entity, 'ids': ids},
+    );
+    return (res.data?['message'] as String?) ?? 'Archived.';
+  }
+
+  Future<String> restoreArchivedBulk(List<int> ids) async {
+    final res = await _client.post<Map<String, dynamic>>(
+      '/api/mobile/archive/bulk',
+      data: {'op': 'restore', 'ids': ids},
+    );
+    return (res.data?['message'] as String?) ?? 'Restored.';
   }
 
   /// BMI-aware health history analysis.

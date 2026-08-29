@@ -14,6 +14,7 @@ class ListRow extends StatefulWidget {
     this.trailing,
     this.onTap,
     this.onLongPress,
+    this.selected = false,
   });
 
   final String title;
@@ -22,6 +23,7 @@ class ListRow extends StatefulWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final bool selected;
 
   @override
   State<ListRow> createState() => _ListRowState();
@@ -40,19 +42,31 @@ class _ListRowState extends State<ListRow> {
       curve: Curves.easeOutCubic,
       child: Material(
         color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
           onTap: widget.onTap,
           onLongPress: widget.onLongPress,
           onHighlightChanged:
               tappable ? (value) => setState(() => _pressed = value) : null,
-          child: Container(
+          child: AnimatedContainer(
+            duration: VivrantMotion.fast,
             constraints: const BoxConstraints(minHeight: VivrantLayout.minTap),
             padding: VivrantLayout.rowPadding,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: c.ink.withValues(alpha: 0.08)),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: widget.selected
+                    ? c.accent.withValues(alpha: 0.45)
+                    : c.ink.withValues(alpha: _pressed ? 0.14 : 0.08),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: c.accent.withValues(alpha: c.dark ? 0.08 : 0.04),
+                  blurRadius: _pressed ? 8 : 16,
+                  offset: Offset(0, _pressed ? 2 : 6),
+                ),
+              ],
             ),
             child: Row(
               children: [

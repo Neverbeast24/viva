@@ -54,12 +54,11 @@ extension VivrantNutritionApi on VivrantApi {
     if (photoPath != null && photoPath.isNotEmpty) {
       final name = photoPath.split(RegExp(r'[\\/]')).last;
       final mime = imageMediaType(name);
-      final ext = mime.subtype == 'jpeg' ? 'jpg' : mime.subtype;
       final form = FormData.fromMap({
         'description': description,
         'photo': await MultipartFile.fromFile(
           photoPath,
-          filename: 'meal.$ext',
+          filename: imageUploadFilename(name, prefix: 'meal'),
           contentType: mime,
         ),
       });

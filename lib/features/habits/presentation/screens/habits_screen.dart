@@ -19,7 +19,8 @@ class HabitsScreen extends ConsumerStatefulWidget {
   ConsumerState<HabitsScreen> createState() => _HabitsScreenState();
 }
 
-class _HabitsScreenState extends ConsumerState<HabitsScreen> {
+class _HabitsScreenState extends ConsumerState<HabitsScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   List<Habit> _habits = [];
   bool _loading = true;
@@ -136,9 +137,11 @@ class _HabitsScreenState extends ConsumerState<HabitsScreen> {
     }
   }
 
-  Future<void> _delete(Habit h) async {
-    final ok = await confirmDelete(context, label: h.title);
-    if (!ok || !mounted) return;
+  Future<void> _delete(Habit h, {bool confirm = true}) async {
+    if (confirm) {
+      final ok = await confirmDelete(context, label: h.title);
+      if (!ok || !mounted) return;
+    }
     final prev = List<Habit>.from(_habits);
     _setHabits(_habits.where((item) => item.id != h.id).toList());
     try {
@@ -232,6 +235,20 @@ class _HabitsScreenState extends ConsumerState<HabitsScreen> {
       appBar: AppBar(
         title: const Text('Habits'),
         actions: [
+          ...selectAppBarActions(
+            visibleIds: _habits.map((h) => h.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'habits',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _habits = _habits.where((h) => !ids.contains(h.id)).toList();
+                });
+              },
+            ),
+          ),
           IconButton(onPressed: _add, icon: const Icon(Icons.add)),
         ],
       ),
@@ -319,7 +336,7 @@ class _HabitsScreenState extends ConsumerState<HabitsScreen> {
                       'No habits match these filters. Try All or another search.',
                 )
               else ...[
-                if (_canReorder)
+                if (_canReorder && !selecting)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
@@ -328,20 +345,28 @@ class _HabitsScreenState extends ConsumerState<HabitsScreen> {
                     ),
                   ),
                 NestedReorderableColumn(
-                  enabled: _canReorder,
+                  enabled: _canReorder && !selecting,
                   itemCount: filtered.length,
                   keyOf: (i) => filtered[i].id,
                   onReorder: _reorder,
                   itemBuilder: (context, index) {
                     final h = filtered[index];
-                    return Padding(
+                    return wrapArchiveable(
+                      id: h.id,
+                      label: h.title,
+                      archive: () => _delete(h, confirm: false),
+                      child: Padding(
                       padding: const EdgeInsets.only(bottom: VivrantLayout.itemGap),
                       child: VivrantPanel(
                         child: Row(
                           children: [
                             Checkbox(
-                              value: h.doneToday,
-                              onChanged: (v) => _toggle(h, v ?? false),
+                              value: selecting
+                                  ? selectedIds.contains(h.id)
+                                  : h.doneToday,
+                              onChanged: selecting
+                                  ? (_) => toggleSelected(h.id)
+                                  : (v) => _toggle(h, v ?? false),
                             ),
                             Expanded(
                               child: Text(
@@ -391,6 +416,7 @@ class _HabitsScreenState extends ConsumerState<HabitsScreen> {
                           ],
                         ),
                       ),
+                    ),
                     );
                   },
                 ),

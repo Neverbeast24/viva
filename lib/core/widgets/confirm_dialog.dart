@@ -47,3 +47,30 @@ Future<bool> confirmDelete(
     confirmLabel: confirmLabel,
   );
 }
+
+Future<bool> confirmDeleteMany(
+  BuildContext context, {
+  required int count,
+}) {
+  final n = count < 0 ? 0 : count;
+  return confirmAction(
+    context,
+    title: 'Archive $n item${n == 1 ? '' : 's'}?',
+    body:
+        'They will leave this list and move to Archived. You can restore them anytime from Profile → Archived.',
+    confirmLabel: 'Archive',
+  );
+}
+
+Future<bool> confirmRestoreMany(
+  BuildContext context, {
+  required int count,
+}) {
+  final n = count < 0 ? 0 : count;
+  return confirmAction(
+    context,
+    title: 'Restore $n item${n == 1 ? '' : 's'}?',
+    body: 'They will come back to their original module lists.',
+    confirmLabel: 'Restore',
+  );
+}

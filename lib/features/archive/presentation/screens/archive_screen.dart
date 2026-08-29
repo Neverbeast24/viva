@@ -35,7 +35,8 @@ class ArchiveScreen extends ConsumerStatefulWidget {
   ConsumerState<ArchiveScreen> createState() => _ArchiveScreenState();
 }
 
-class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
+class _ArchiveScreenState extends ConsumerState<ArchiveScreen>
+    with SelectableIdsMixin {
   bool _loading = true;
   bool _exporting = false;
   String? _error;
@@ -68,19 +69,21 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     }
   }
 
-  Future<void> _restore(Map<String, dynamic> item) async {
+  Future<void> _restore(Map<String, dynamic> item, {bool confirm = true}) async {
     final id = (item['id'] as num?)?.toInt();
     if (id == null) return;
     final title = (item['title'] as String?)?.trim().isNotEmpty == true
         ? item['title'] as String
         : 'this item';
-    final ok = await confirmAction(
-      context,
-      title: 'Restore $title?',
-      body: 'It will come back to its original module list.',
-      confirmLabel: 'Restore',
-    );
-    if (!ok || !mounted) return;
+    if (confirm) {
+      final ok = await confirmAction(
+        context,
+        title: 'Restore $title?',
+        body: 'It will come back to its original module list.',
+        confirmLabel: 'Restore',
+      );
+      if (!ok || !mounted) return;
+    }
     try {
       final message = await ref.read(vivrantApiProvider).restoreArchived(id);
       if (!mounted) return;
@@ -104,7 +107,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
       await file.writeAsString(const JsonEncoder.withIndent('  ').convert(dump));
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(file.path)],
+          files: [XFile(file.path, mimeType: 'application/json', name: file.uri.pathSegments.last)],
           text: 'VIVRΛNT backup',
           sharePositionOrigin: origin,
         ),
@@ -146,6 +149,37 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
       appBar: AppBar(
         title: const Text('Archived'),
         actions: [
+          ...selectAppBarActions(
+            visibleIds: _items
+                .map((item) => (item['id'] as num?)?.toInt())
+                .whereType<int>(),
+            archiveTooltip: 'Restore',
+            archiveIcon: Icons.settings_backup_restore,
+            onArchive: () async {
+              final ids = selectedIds.toList();
+              if (ids.isEmpty) return;
+              if (!await confirmRestoreMany(context, count: ids.length)) {
+                return;
+              }
+              try {
+                final message =
+                    await ref.read(vivrantApiProvider).restoreArchivedBulk(ids);
+                if (!mounted) return;
+                setState(() {
+                  _items = _items
+                      .where(
+                        (row) => !ids.contains((row['id'] as num?)?.toInt()),
+                      )
+                      .toList();
+                });
+                exitSelect();
+                context.showSuccess(message);
+              } catch (e) {
+                if (!mounted) return;
+                context.showError(apiErrorMessage(e));
+              }
+            },
+          ),
           IconButton(
             tooltip: 'Download backup',
             onPressed: _exporting ? null : _export,
@@ -186,21 +220,56 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
                     ),
                     const SizedBox(height: 8),
                     for (final item in entry.value) ...[
-                      VivrantPanel(
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            (item['title'] as String?)?.trim().isNotEmpty == true
-                                ? item['title'] as String
-                                : 'Archived item',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          subtitle: Text(_archivedWhen(item)),
-                          trailing: TextButton(
-                            onPressed: () => _restore(item),
-                            child: const Text('Restore'),
-                          ),
-                        ),
+                      Builder(
+                        builder: (context) {
+                          final id = (item['id'] as num?)?.toInt();
+                          final title =
+                              (item['title'] as String?)?.trim().isNotEmpty ==
+                                      true
+                                  ? item['title'] as String
+                                  : 'Archived item';
+                          final selected =
+                              id != null && selectedIds.contains(id);
+                          final card = VivrantPanel(
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: selecting && id != null
+                                  ? selectLeading(selected)
+                                  : null,
+                              title: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              subtitle: Text(_archivedWhen(item)),
+                              selected: selected,
+                              onTap: selecting && id != null
+                                  ? () => toggleSelected(id)
+                                  : null,
+                              trailing: selecting
+                                  ? null
+                                  : TextButton(
+                                      onPressed: () => _restore(item),
+                                      child: const Text('Restore'),
+                                    ),
+                            ),
+                          );
+                          if (selecting || id == null) return card;
+                          return SwipeToRemove(
+                            itemKey: ValueKey('restore-$id'),
+                            action: 'Restore',
+                            confirmDismiss: (_) => confirmAction(
+                              context,
+                              title: 'Restore $title?',
+                              body:
+                                  'It will come back to its original module list.',
+                              confirmLabel: 'Restore',
+                            ),
+                            onRemove: () => _restore(item, confirm: false),
+                            child: card,
+                          );
+                        },
                       ),
                       const SizedBox(height: 8),
                     ],

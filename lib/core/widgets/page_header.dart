@@ -13,12 +13,14 @@ class PageHeader extends StatelessWidget {
     required this.eyebrow,
     required this.title,
     this.highlight,
+    this.lede,
     this.trailing,
   });
 
   final String eyebrow;
   final String title;
   final String? highlight;
+  final String? lede;
   final Widget? trailing;
 
   @override
@@ -76,22 +78,34 @@ class PageHeader extends StatelessWidget {
                               ?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 color: c.ink,
-                                height: 1.15,
+                                height: 1.12,
                               ),
                         ),
                         if (highlight != null)
                           TextSpan(
                             text: ' $highlight',
-                            style: GoogleFonts.bricolageGrotesque(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              height: 1.15,
+                            style: GoogleFonts.instrumentSerif(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w400,
+                              fontStyle: FontStyle.italic,
+                              height: 1.12,
                               color: c.accentDeep,
                             ),
                           ),
                       ],
                     ),
                   ),
+                  if (lede != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      lede!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: c.muted,
+                            fontSize: 15,
+                            height: 1.45,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),

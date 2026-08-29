@@ -29,13 +29,13 @@ class StatCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
       decoration: BoxDecoration(
         color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: c.ink.withValues(alpha: 0.08)),
         boxShadow: [
           BoxShadow(
-            color: c.accent.withValues(alpha: c.dark ? 0.12 : 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+            color: c.accent.withValues(alpha: c.dark ? 0.14 : 0.07),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -51,12 +51,14 @@ class StatCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   label.toUpperCase(),
-                  style: Theme.of(context).textTheme.labelSmall,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.2,
+                      ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           if (number != null && !VivrantMotion.reduce(context))
             TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: number.toDouble()),
@@ -68,6 +70,7 @@ class StatCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: c.ink,
+                        height: 1.05,
                       ),
                 );
               },
@@ -78,6 +81,7 @@ class StatCard extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: c.ink,
+                    height: 1.05,
                   ),
             ),
           if (caption != null) ...[

@@ -36,9 +36,9 @@ class _ModuleTileState extends State<ModuleTile> {
       curve: Curves.easeOutCubic,
       child: Material(
         color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
           onTap: widget.onTap,
           onHighlightChanged: (value) => setState(() => _pressed = value),
           child: AnimatedContainer(
@@ -47,14 +47,14 @@ class _ModuleTileState extends State<ModuleTile> {
             constraints: const BoxConstraints(minHeight: VivrantLayout.minTap),
             padding: VivrantLayout.rowPadding,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(22),
               border: Border.all(
                 color: c.ink.withValues(alpha: _pressed ? 0.14 : 0.08),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: c.accent.withValues(alpha: c.dark ? 0.10 : 0.05),
-                  blurRadius: _pressed ? 8 : 18,
+                  color: c.accent.withValues(alpha: c.dark ? 0.12 : 0.06),
+                  blurRadius: _pressed ? 8 : 20,
                   offset: Offset(0, _pressed ? 2 : 8),
                 ),
               ],
@@ -93,9 +93,17 @@ class _ModuleTileState extends State<ModuleTile> {
                   duration: VivrantMotion.fast,
                   curve: VivrantMotion.enter,
                   offset: _pressed ? const Offset(0.18, 0) : Offset.zero,
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    color: c.ink.withValues(alpha: 0.35),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: c.surfaceSoft,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      color: c.ink.withValues(alpha: 0.42),
+                    ),
                   ),
                 ),
               ],

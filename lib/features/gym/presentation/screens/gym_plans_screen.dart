@@ -33,7 +33,8 @@ class GymPlansScreen extends ConsumerStatefulWidget {
 
 enum GymPlansView { builder, saved }
 
-class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
+class _GymPlansScreenState extends ConsumerState<GymPlansScreen>
+    with SelectableIdsMixin {
   static const _prefsDaysKey = 'vivrant.gym.plan.days';
   static const _prefsTrainingDaysKey = 'vivrant.gym.plan.trainingDays';
   static const _prefsSessionKey = 'vivrant.gym.plan.session';
@@ -571,6 +572,25 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
     return visible.isNotEmpty && visible.every((e) => _knownSlugs.contains(e.slug));
   }
 
+  Future<void> _removePlan(int id, {bool confirm = true, String? title}) async {
+    if (confirm) {
+      if (!(await confirmDelete(context, label: title ?? 'this program'))) return;
+    }
+    try {
+      await ref.read(vivrantApiProvider).deleteGymPlan(id);
+      if (!mounted) return;
+      setState(() {
+        _plans = _plans.where((item) => (item['id'] as num).toInt() != id).toList();
+        _expanded.remove(id);
+      });
+      ref.read(moduleCacheProvider).write(ModuleCacheKeys.gymPlans, _plans);
+      context.showSuccess('Program removed');
+    } catch (e) {
+      if (!mounted) return;
+      context.showError(apiErrorMessage(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -583,6 +603,27 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
         actions: [
           if (isSaved && _plans.isNotEmpty)
             ShareExportButton(doc: gymPlansDoc(_plans)),
+          if (isSaved)
+            ...selectAppBarActions(
+              visibleIds: filtered
+                  .map((p) => (p['id'] as num?)?.toInt())
+                  .whereType<int>(),
+              onArchive: () => confirmAndArchiveSelected(
+                request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                      entity: 'gym_plans',
+                      ids: ids,
+                    ),
+                onRemoved: (ids) {
+                  setState(() {
+                    _plans = _plans
+                        .where((item) => !ids.contains((item['id'] as num).toInt()))
+                        .toList();
+                    _expanded.removeAll(ids);
+                  });
+                  ref.read(moduleCacheProvider).write(ModuleCacheKeys.gymPlans, _plans);
+                },
+              ),
+            ),
           if (isBuilder)
             IconButton(
               onPressed: _generating ? null : _createAi,
@@ -972,7 +1013,12 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
                       'No programs match these filters. Try All or another search.',
                 )
               else
-                ...filtered.map((p) => _PlanCard(
+                ...filtered.map((p) {
+                  final id = (p['id'] as num).toInt();
+                  final title = (p['title'] as String?)?.trim().isNotEmpty == true
+                      ? p['title'] as String
+                      : 'this program';
+                  final card = _PlanCard(
                       plan: p,
                       exercises: _knownSlugs.isEmpty && _customExercises.isEmpty
                           ? _exercises
@@ -1022,31 +1068,30 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen> {
                           context.showError(apiErrorMessage(e));
                         }
                       },
-                      onDelete: () async {
-                        final id = (p['id'] as num).toInt();
-                        final title = (p['title'] as String?)?.trim().isNotEmpty == true
-                            ? p['title'] as String
-                            : 'this program';
-                        if (!(await confirmDelete(context, label: title))) return;
-                        try {
-                          await ref.read(vivrantApiProvider).deleteGymPlan(id);
-                          if (!mounted) return;
-                          setState(() {
-                            _plans = _plans
-                                .where((item) => (item['id'] as num).toInt() != id)
-                                .toList();
-                            _expanded.remove(id);
-                          });
-                          ref
-                              .read(moduleCacheProvider)
-                              .write(ModuleCacheKeys.gymPlans, _plans);
-                          context.showSuccess('Program removed');
-                        } catch (e) {
-                          if (!mounted) return;
-                          context.showError(apiErrorMessage(e));
-                        }
-                      },
-                    )),
+                      onDelete: () => _removePlan(id, title: title),
+                    );
+                  if (selecting) {
+                    return GestureDetector(
+                      onTap: () => toggleSelected(id),
+                      child: Stack(
+                        children: [
+                          IgnorePointer(child: card),
+                          Positioned(
+                            left: 12,
+                            top: 18,
+                            child: selectLeading(selectedIds.contains(id)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return wrapArchiveable(
+                    id: id,
+                    label: title,
+                    archive: () => _removePlan(id, confirm: false, title: title),
+                    child: card,
+                  );
+                }),
             ],
               if (!_loading && _error == null && _programHistory.isNotEmpty) ...[
                 const SizedBox(height: 18),

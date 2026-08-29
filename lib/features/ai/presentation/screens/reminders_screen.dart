@@ -17,7 +17,8 @@ class RemindersScreen extends ConsumerStatefulWidget {
   ConsumerState<RemindersScreen> createState() => _RemindersScreenState();
 }
 
-class _RemindersScreenState extends ConsumerState<RemindersScreen> {
+class _RemindersScreenState extends ConsumerState<RemindersScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
@@ -221,6 +222,26 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> {
       appBar: AppBar(
         title: const Text('Reminders'),
         actions: [
+          ...selectAppBarActions(
+            visibleIds: _items
+                .map((r) => (r['id'] as num?)?.toInt())
+                .whereType<int>(),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'user_reminders',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _items = _items
+                      .where(
+                        (r) => !ids.contains((r['id'] as num?)?.toInt()),
+                      )
+                      .toList();
+                });
+              },
+            ),
+          ),
           IconButton(onPressed: _add, icon: const Icon(Icons.add)),
         ],
       ),
@@ -308,7 +329,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> {
                       'No reminders match these filters. Try All or another search.',
                 )
               else ...[
-                if (_canReorder)
+                if (_canReorder && !selecting)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
@@ -317,7 +338,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> {
                     ),
                   ),
                 NestedReorderableColumn(
-                  enabled: _canReorder,
+                  enabled: _canReorder && !selecting,
                   itemCount: filtered.length,
                   keyOf: (i) => (filtered[i]['id'] as num).toInt(),
                   onReorder: _reorder,
@@ -325,14 +346,41 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> {
                   final r = filtered[index];
                   final enabled = r['enabled'] as bool? ?? true;
                   final id = (r['id'] as num).toInt();
-                  return Padding(
+                  final title = r['title']?.toString() ?? 'Reminder';
+                  return wrapArchiveable(
+                    id: id,
+                    label: title,
+                    archive: () async {
+                      final prev =
+                          _items.map((e) => Map<String, dynamic>.from(e)).toList();
+                      _setItems(
+                        _items
+                            .where((item) => (item['id'] as num).toInt() != id)
+                            .toList(),
+                      );
+                      try {
+                        await ref.read(vivrantApiProvider).deleteReminder(id);
+                        if (!mounted) return;
+                        context.showSuccess('Reminder removed');
+                      } catch (e) {
+                        if (!mounted) return;
+                        _setItems(prev);
+                        context.showError(apiErrorMessage(e));
+                      }
+                    },
+                    child: Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: VivrantPanel(
                       child: Row(
                         children: [
+                          if (selecting)
+                            Checkbox(
+                              value: selectedIds.contains(id),
+                              onChanged: (_) => toggleSelected(id),
+                            ),
                           Expanded(
                             child: Text(
-                              r['title']?.toString() ?? 'Reminder',
+                              title,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                               ),
@@ -410,7 +458,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> {
                           IconButton(
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () async {
-                              if (!(await confirmDelete(context, label: 'this reminder'))) return;
+                              if (!(await confirmDelete(context, label: title))) return;
                               final prev =
                                   _items.map((e) => Map<String, dynamic>.from(e)).toList();
                               _setItems(
@@ -434,6 +482,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> {
                         ],
                       ),
                     ),
+                  ),
                   );
                   },
                 ),

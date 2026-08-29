@@ -23,7 +23,8 @@ class PantryScreen extends ConsumerStatefulWidget {
   ConsumerState<PantryScreen> createState() => _PantryScreenState();
 }
 
-class _PantryScreenState extends ConsumerState<PantryScreen> {
+class _PantryScreenState extends ConsumerState<PantryScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   final _quickName = TextEditingController();
   final _sheetName = TextEditingController();
@@ -183,10 +184,21 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
   Widget _buildSheet() {
     return ExcelTable(
       highlightLastRow: true,
-      headers: const ['Item', 'Category', 'Stock', ''],
+      headers: [
+        if (selecting) '',
+        'Item',
+        'Category',
+        'Stock',
+        '',
+      ],
       rows: [
         for (final item in _filtered)
           [
+            if (selecting)
+              Checkbox(
+                value: selectedIds.contains(item.id),
+                onChanged: (_) => toggleSelected(item.id),
+              ),
             InkWell(
               onTap: () => _editPantry(item),
               child: Text(
@@ -202,6 +214,7 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
             ),
           ],
         [
+          if (selecting) const SizedBox.shrink(),
           ExcelCellField(
             controller: _sheetName,
             hint: 'New item',
@@ -249,9 +262,11 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
     }
   }
 
-  Future<void> _delete(PantryItem item) async {
-    final ok = await confirmDelete(context, label: item.name);
-    if (!ok || !mounted) return;
+  Future<void> _delete(PantryItem item, {bool confirm = true}) async {
+    if (confirm) {
+      final ok = await confirmDelete(context, label: item.name);
+      if (!ok || !mounted) return;
+    }
     final prev = List<PantryItem>.from(_items);
     _setItems(_items.where((i) => i.id != item.id).toList());
     try {
@@ -327,6 +342,20 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
         title: const Text('Pantry'),
         actions: [
           if (_items.isNotEmpty) ShareExportButton(doc: pantryDoc(_items)),
+          ...selectAppBarActions(
+            visibleIds: _items.map((i) => i.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'pantry_items',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _items = _items.where((i) => !ids.contains(i.id)).toList();
+                });
+              },
+            ),
+          ),
           IconButton(
             tooltip: 'Add pantry item',
             onPressed: () => context.push('/pantry/add'),
@@ -442,7 +471,7 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
                       'No items match these filters. Try All or another search.',
                 )
               else ...[
-                if (_canReorder)
+                if (_canReorder && !selecting)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
@@ -451,13 +480,17 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
                     ),
                   ),
                 NestedReorderableColumn(
-                  enabled: _canReorder,
+                  enabled: _canReorder && !selecting,
                   itemCount: filtered.length,
                   keyOf: (i) => filtered[i].id,
                   onReorder: _reorder,
                   itemBuilder: (context, index) {
                     final item = filtered[index];
-                    return Padding(
+                    return wrapArchiveable(
+                      id: item.id,
+                      label: item.name,
+                      archive: () => _delete(item, confirm: false),
+                      child: Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: VivrantPanel(
                         child: Column(
@@ -465,6 +498,11 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
                           children: [
                             Row(
                               children: [
+                                if (selecting)
+                                  Checkbox(
+                                    value: selectedIds.contains(item.id),
+                                    onChanged: (_) => toggleSelected(item.id),
+                                  ),
                                 Expanded(
                                   child: Text(
                                     item.name,
@@ -509,6 +547,7 @@ class _PantryScreenState extends ConsumerState<PantryScreen> {
                           ],
                         ),
                       ),
+                    ),
                     );
                   },
                 ),

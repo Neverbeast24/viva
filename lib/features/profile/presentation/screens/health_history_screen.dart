@@ -20,7 +20,7 @@ class HealthHistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _HealthHistoryScreenState extends ConsumerState<HealthHistoryScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, SelectableIdsMixin {
   List<Map<String, dynamic>> _entries = [];
   bool _loading = true;
   String? _error;
@@ -217,6 +217,29 @@ class _HealthHistoryScreenState extends ConsumerState<HealthHistoryScreen>
         actions: [
           if (_entries.isNotEmpty)
             ShareExportButton(doc: healthHistoryDoc(_entries)),
+          ...selectAppBarActions(
+            visibleIds: _entries
+                .map((e) => (e['id'] as num?)?.toInt())
+                .whereType<int>(),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'health_history',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _entries = _entries
+                      .where(
+                        (e) => !ids.contains((e['id'] as num?)?.toInt()),
+                      )
+                      .toList();
+                });
+                ref
+                    .read(moduleCacheProvider)
+                    .write(ModuleCacheKeys.healthHistory, _entries);
+              },
+            ),
+          ),
           IconButton(
             onPressed: _add,
             tooltip: 'Add entry',
@@ -315,7 +338,35 @@ class _HealthHistoryScreenState extends ConsumerState<HealthHistoryScreen>
                     ),
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: Container(
+                      child: wrapArchiveable(
+                        id: (e['id'] as num?)?.toInt() ?? i,
+                        label: 'this measurement',
+                        archive: () async {
+                          final id = (e['id'] as num?)?.toInt();
+                          if (id == null) return;
+                          try {
+                            await ref
+                                .read(vivrantApiProvider)
+                                .deleteHealthHistory(id);
+                            if (!mounted) return;
+                            setState(() {
+                              _entries = _entries
+                                  .where(
+                                    (row) => (row['id'] as num?)?.toInt() != id,
+                                  )
+                                  .toList();
+                            });
+                            ref.read(moduleCacheProvider).write(
+                                  ModuleCacheKeys.healthHistory,
+                                  _entries,
+                                );
+                            context.showSuccess('Measurement archived');
+                          } catch (err) {
+                            if (!mounted) return;
+                            context.showError(apiErrorMessage(err));
+                          }
+                        },
+                        child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: panel.withValues(alpha: dark ? 0.92 : 0.96),
@@ -333,6 +384,16 @@ class _HealthHistoryScreenState extends ConsumerState<HealthHistoryScreen>
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (selecting)
+                              Checkbox(
+                                value: selectedIds.contains(
+                                  (e['id'] as num?)?.toInt(),
+                                ),
+                                onChanged: (_) {
+                                  final id = (e['id'] as num?)?.toInt();
+                                  if (id != null) toggleSelected(id);
+                                },
+                              ),
                             Container(
                               width: 42,
                               height: 42,
@@ -371,8 +432,45 @@ class _HealthHistoryScreenState extends ConsumerState<HealthHistoryScreen>
                                 ],
                               ),
                             ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                final id = (e['id'] as num?)?.toInt();
+                                if (id == null) return;
+                                if (!(await confirmDelete(
+                                  context,
+                                  label: 'this measurement',
+                                ))) {
+                                  return;
+                                }
+                                try {
+                                  await ref
+                                      .read(vivrantApiProvider)
+                                      .deleteHealthHistory(id);
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _entries = _entries
+                                        .where(
+                                          (row) =>
+                                              (row['id'] as num?)?.toInt() !=
+                                              id,
+                                        )
+                                        .toList();
+                                  });
+                                  ref.read(moduleCacheProvider).write(
+                                        ModuleCacheKeys.healthHistory,
+                                        _entries,
+                                      );
+                                  context.showSuccess('Measurement archived');
+                                } catch (err) {
+                                  if (!mounted) return;
+                                  context.showError(apiErrorMessage(err));
+                                }
+                              },
+                            ),
                           ],
                         ),
+                      ),
                       ),
                     ),
                   ),

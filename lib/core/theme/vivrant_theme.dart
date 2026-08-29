@@ -109,7 +109,7 @@ abstract final class VivrantTheme {
         color: card,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: ink.withValues(alpha: 0.08)),
         ),
         margin: EdgeInsets.zero,
@@ -145,7 +145,7 @@ abstract final class VivrantTheme {
           foregroundColor: inverseFg,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           textStyle: GoogleFonts.spaceGrotesk(
             fontWeight: FontWeight.w800,
             fontSize: 16.5,
@@ -157,7 +157,7 @@ abstract final class VivrantTheme {
           backgroundColor: inverse,
           foregroundColor: inverseFg,
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -165,7 +165,7 @@ abstract final class VivrantTheme {
           foregroundColor: ink,
           side: BorderSide(color: ink.withValues(alpha: 0.14)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
       chipTheme: ChipThemeData(

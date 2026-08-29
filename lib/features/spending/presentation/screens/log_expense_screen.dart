@@ -16,7 +16,8 @@ class LogExpenseScreen extends ConsumerStatefulWidget {
   ConsumerState<LogExpenseScreen> createState() => _LogExpenseScreenState();
 }
 
-class _LogExpenseScreenState extends ConsumerState<LogExpenseScreen> {
+class _LogExpenseScreenState extends ConsumerState<LogExpenseScreen>
+    with SelectableIdsMixin {
   final _title = TextEditingController();
   final _amount = TextEditingController();
   String _category = 'food';
@@ -75,7 +76,25 @@ class _LogExpenseScreenState extends ConsumerState<LogExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     return GradientScaffold(
-      appBar: AppBar(title: const Text('Log expense')),
+      appBar: AppBar(
+        title: const Text('Log expense'),
+        actions: [
+          ...selectAppBarActions(
+            visibleIds: _recent.map((e) => e.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'expenses',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _recent = _recent.where((e) => !ids.contains(e.id)).toList();
+                });
+              },
+            ),
+          ),
+        ],
+      ),
       child: ListView(
         padding: VivrantLayout.pagePadding,
         children: [
@@ -118,14 +137,36 @@ class _LogExpenseScreenState extends ConsumerState<LogExpenseScreen> {
             const SizedBox(height: 20),
             const SectionLabel('Recent expenses'),
             for (final e in _recent)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: ListRow(
-                  title: e.title,
-                  subtitle: e.category,
-                  trailing: Text(
-                    '₱${e.amount.round()}',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+              wrapArchiveable(
+                id: e.id,
+                label: e.title,
+                archive: () async {
+                  try {
+                    await ref.read(vivrantApiProvider).deleteExpense(e.id);
+                    if (!mounted) return;
+                    setState(() {
+                      _recent = _recent.where((row) => row.id != e.id).toList();
+                    });
+                    context.showSuccess('Expense removed');
+                  } catch (err) {
+                    if (!mounted) return;
+                    context.showError(apiErrorMessage(err));
+                  }
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ListRow(
+                    selected: selecting && selectedIds.contains(e.id),
+                    leading: selecting
+                        ? selectLeading(selectedIds.contains(e.id))
+                        : null,
+                    title: e.title,
+                    subtitle: e.category,
+                    trailing: Text(
+                      '₱${e.amount.round()}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    onTap: selecting ? () => toggleSelected(e.id) : null,
                   ),
                 ),
               ),

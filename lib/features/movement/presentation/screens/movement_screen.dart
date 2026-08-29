@@ -19,7 +19,8 @@ class MovementScreen extends ConsumerStatefulWidget {
   ConsumerState<MovementScreen> createState() => _MovementScreenState();
 }
 
-class _MovementScreenState extends ConsumerState<MovementScreen> {
+class _MovementScreenState extends ConsumerState<MovementScreen>
+    with SelectableIdsMixin {
   static const _tabIndex = 2;
 
   final _query = TextEditingController();
@@ -138,6 +139,23 @@ class _MovementScreenState extends ConsumerState<MovementScreen> {
                     ),
                   if (_items.isNotEmpty)
                     ShareExportButton(doc: movementWorkoutsDoc(_items)),
+                  ...selectAppBarActions(
+                    visibleIds: _items.map((w) => w.id),
+                    onArchive: () => confirmAndArchiveSelected(
+                      request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                            entity: 'workout_logs',
+                            ids: ids,
+                          ),
+                      onRemoved: (ids) {
+                        setState(() {
+                          _items = _items.where((w) => !ids.contains(w.id)).toList();
+                        });
+                        ref
+                            .read(moduleCacheProvider)
+                            .write(ModuleCacheKeys.movement, _items);
+                      },
+                    ),
+                  ),
                   IconButton(
                     onPressed: () => context.push('/move/log'),
                     icon: const Icon(Icons.add_circle_outline),
@@ -205,7 +223,41 @@ class _MovementScreenState extends ConsumerState<MovementScreen> {
                 ...filtered.map(
                   (w) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: VivrantPanel(
+                    child: selecting
+                        ? ListRow(
+                            selected: selectedIds.contains(w.id),
+                            leading: selectLeading(selectedIds.contains(w.id)),
+                            title: w.title,
+                            subtitle:
+                                '${w.activityType} · ${w.durationMinutes ?? '—'} min',
+                            onTap: () => toggleSelected(w.id),
+                          )
+                        : SwipeToRemove(
+                            itemKey: ValueKey(w.id),
+                            action: 'Archive',
+                            confirmDismiss: (_) =>
+                                confirmDelete(context, label: w.title),
+                            onRemove: () async {
+                              try {
+                                await ref
+                                    .read(vivrantApiProvider)
+                                    .deleteWorkout(w.id);
+                                if (!mounted) return;
+                                setState(() {
+                                  _items = _items
+                                      .where((x) => x.id != w.id)
+                                      .toList();
+                                });
+                                ref
+                                    .read(moduleCacheProvider)
+                                    .write(ModuleCacheKeys.movement, _items);
+                                context.showSuccess('Workout removed');
+                              } catch (e) {
+                                if (!mounted) return;
+                                context.showError(apiErrorMessage(e));
+                              }
+                            },
+                            child: VivrantPanel(
                       child: Row(
                         children: [
                           Expanded(
@@ -288,6 +340,7 @@ class _MovementScreenState extends ConsumerState<MovementScreen> {
                         ],
                       ),
                     ),
+                          ),
                   ),
                 ),
             ],

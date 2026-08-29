@@ -18,7 +18,8 @@ class JournalHistoryScreen extends ConsumerStatefulWidget {
       _JournalHistoryScreenState();
 }
 
-class _JournalHistoryScreenState extends ConsumerState<JournalHistoryScreen> {
+class _JournalHistoryScreenState extends ConsumerState<JournalHistoryScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   List<JournalEntry> _entries = [];
   bool _loading = true;
@@ -102,6 +103,21 @@ class _JournalHistoryScreenState extends ConsumerState<JournalHistoryScreen> {
         actions: [
           if (_entries.isNotEmpty)
             ShareExportButton(doc: journalEntriesDoc(_entries)),
+          ...selectAppBarActions(
+            visibleIds: _entries.map((e) => e.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'journal_entries',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _entries =
+                      _entries.where((e) => !ids.contains(e.id)).toList();
+                });
+              },
+            ),
+          ),
           IconButton(
             tooltip: 'New entry',
             onPressed: () => context.push('/journal/new').then((_) {
@@ -171,12 +187,39 @@ class _JournalHistoryScreenState extends ConsumerState<JournalHistoryScreen> {
                 )
               else
                 ...filtered.map(
-                  (e) => Padding(
+                  (e) {
+                    final label = (e.title?.trim().isNotEmpty == true)
+                        ? e.title!.trim()
+                        : 'this note';
+                    return wrapArchiveable(
+                      id: e.id,
+                      label: label,
+                      archive: () async {
+                        final prev = List<JournalEntry>.from(_entries);
+                        _setEntries(
+                          _entries.where((x) => x.id != e.id).toList(),
+                        );
+                        try {
+                          await ref.read(vivrantApiProvider).deleteJournal(e.id);
+                          if (!mounted) return;
+                          context.showSuccess('Entry removed');
+                        } catch (err) {
+                          if (!mounted) return;
+                          _setEntries(prev);
+                          context.showError(apiErrorMessage(err));
+                        }
+                      },
+                      child: Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: VivrantPanel(
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (selecting)
+                            Checkbox(
+                              value: selectedIds.contains(e.id),
+                              onChanged: (_) => toggleSelected(e.id),
+                            ),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,6 +318,8 @@ class _JournalHistoryScreenState extends ConsumerState<JournalHistoryScreen> {
                       ),
                     ),
                   ),
+                    );
+                  },
                 ),
             ],
           ],

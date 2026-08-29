@@ -22,7 +22,7 @@ class GoalsScreen extends ConsumerStatefulWidget {
 }
 
 class _GoalsScreenState extends ConsumerState<GoalsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, SelectableIdsMixin {
   List<HealthGoal> _goals = [];
   Map<String, dynamic> _today = const {};
   bool _loading = true;
@@ -249,6 +249,20 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen>
         title: const Text('Goals'),
         actions: [
           if (_goals.isNotEmpty) ShareExportButton(doc: goalsDoc(_goals)),
+          ...selectAppBarActions(
+            visibleIds: _goals.map((g) => g.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'health_goals',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _goals = _goals.where((g) => !ids.contains(g.id)).toList();
+                });
+              },
+            ),
+          ),
           IconButton(
             onPressed: _add,
             tooltip: 'Add goal',
@@ -370,14 +384,16 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen>
                 ),
               )
             else ...[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Long-press, then drag to reorder.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              if (!selecting)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Long-press, then drag to reorder.',
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                  ),
                 ),
-              ),
               NestedReorderableColumn(
+                enabled: !selecting,
                 itemCount: _goals.length,
                 keyOf: (i) => _goals[i].id,
                 onReorder: _reorder,
@@ -404,7 +420,24 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen>
                     ),
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: Container(
+                      child: wrapArchiveable(
+                        id: g.id,
+                        label: g.title,
+                        archive: () async {
+                          final prev = List<HealthGoal>.from(_goals);
+                          _setGoals(_goals.where((x) => x.id != g.id).toList());
+                          try {
+                            await ref.read(vivrantApiProvider).deleteGoal(g.id);
+                            if (!mounted) return;
+                            HapticFeedback.selectionClick();
+                            context.showSuccess('Goal deleted');
+                          } catch (e) {
+                            if (!mounted) return;
+                            _setGoals(prev);
+                            context.showError(apiErrorMessage(e));
+                          }
+                        },
+                        child: Container(
                         padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
                         decoration: BoxDecoration(
                           color: panel.withValues(alpha: dark ? 0.92 : 0.96),
@@ -421,6 +454,11 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen>
                         ),
                         child: Row(
                           children: [
+                            if (selecting)
+                              Checkbox(
+                                value: selectedIds.contains(g.id),
+                                onChanged: (_) => toggleSelected(g.id),
+                              ),
                             Container(
                               width: 42,
                               height: 42,
@@ -586,6 +624,7 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen>
                             ),
                           ],
                         ),
+                      ),
                       ),
                     ),
                   ),

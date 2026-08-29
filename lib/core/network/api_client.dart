@@ -114,6 +114,11 @@ class ApiClient {
               if (token != null && token.isNotEmpty) {
                 opts.headers['Authorization'] = 'Bearer $token';
               }
+              // Multipart bodies are consumed on the first attempt.
+              final data = opts.data;
+              if (data is FormData) {
+                opts.data = data.clone();
+              }
               try {
                 final response = await _dio.fetch(opts);
                 return handler.resolve(response);

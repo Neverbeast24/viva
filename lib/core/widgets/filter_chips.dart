@@ -80,19 +80,19 @@ class _Chip extends StatelessWidget {
           curve: VivrantMotion.enter,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? c.accentSoft : c.panel,
+            color: selected ? c.inverse : c.panel,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: selected
-                  ? c.accent.withValues(alpha: 0.4)
+                  ? Colors.transparent
                   : c.ink.withValues(alpha: 0.1),
             ),
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: c.accent.withValues(alpha: 0.16),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
+                      color: c.ink.withValues(alpha: c.dark ? 0.28 : 0.14),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
                     ),
                   ]
                 : null,
@@ -101,8 +101,8 @@ class _Chip extends StatelessWidget {
             duration: VivrantMotion.fast,
             curve: VivrantMotion.enter,
             style: TextStyle(
-              color: selected ? c.accentDeep : c.ink,
-              fontWeight: FontWeight.w700,
+              color: selected ? c.inverseFg : c.ink,
+              fontWeight: FontWeight.w800,
               fontSize: 14,
               height: 1.1,
             ),

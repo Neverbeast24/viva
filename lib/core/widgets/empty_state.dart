@@ -37,18 +37,19 @@ class EmptyState extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(28, 36, 28, 36),
+      padding: const EdgeInsets.fromLTRB(28, 40, 28, 40),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(24),
         color: Theme.of(context).cardTheme.color?.withValues(alpha: 0.55),
         border: Border.all(
           color: c.ink.withValues(alpha: 0.10),
+          style: BorderStyle.solid,
         ),
       ),
       child: Column(
         children: [
           mark,
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           if (title != null) ...[
             Text(
               title!,
@@ -62,10 +63,10 @@ class EmptyState extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodySmall,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.45),
           ),
           if (action != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             action!,
           ],
         ],

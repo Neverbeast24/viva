@@ -24,13 +24,13 @@ class VivrantPanel extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: c.ink.withValues(alpha: 0.08)),
         boxShadow: [
           BoxShadow(
-            color: c.accent.withValues(alpha: c.dark ? 0.10 : 0.05),
-            blurRadius: 22,
-            offset: const Offset(0, 8),
+            color: c.accent.withValues(alpha: c.dark ? 0.12 : 0.06),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -48,7 +48,7 @@ class VivrantPanel extends StatelessWidget {
                     color: c.accent,
                     boxShadow: [
                       BoxShadow(
-                        color: c.accent.withValues(alpha: 0.4),
+                        color: c.accent.withValues(alpha: 0.45),
                         blurRadius: 8,
                       ),
                     ],

@@ -25,7 +25,8 @@ class GymSessionsScreen extends ConsumerStatefulWidget {
   ConsumerState<GymSessionsScreen> createState() => _GymSessionsScreenState();
 }
 
-class _GymSessionsScreenState extends ConsumerState<GymSessionsScreen> {
+class _GymSessionsScreenState extends ConsumerState<GymSessionsScreen>
+    with SelectableIdsMixin {
   final _query = TextEditingController();
   List<GymSession> _items = [];
   List<Map<String, dynamic>> _plans = [];
@@ -224,6 +225,23 @@ class _GymSessionsScreenState extends ConsumerState<GymSessionsScreen> {
         title: const Text('Workouts'),
         actions: [
           if (_items.isNotEmpty) ShareExportButton(doc: gymSessionsDoc(_items)),
+          ...selectAppBarActions(
+            visibleIds: _items.map((s) => s.id),
+            onArchive: () => confirmAndArchiveSelected(
+              request: (ids) => ref.read(vivrantApiProvider).archiveItems(
+                    entity: 'gym_sessions',
+                    ids: ids,
+                  ),
+              onRemoved: (ids) {
+                setState(() {
+                  _items = _items.where((s) => !ids.contains(s.id)).toList();
+                });
+                ref
+                    .read(moduleCacheProvider)
+                    .write(ModuleCacheKeys.gymSessions, _items);
+              },
+            ),
+          ),
           IconButton(
             onPressed: _log,
             icon: const Icon(Icons.add),
@@ -311,7 +329,42 @@ class _GymSessionsScreenState extends ConsumerState<GymSessionsScreen> {
                 ...filtered.map(
                   (s) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: VivrantPanel(
+                    child: selecting
+                        ? ListRow(
+                            selected: selectedIds.contains(s.id),
+                            leading: selectLeading(selectedIds.contains(s.id)),
+                            title: s.title,
+                            subtitle:
+                                '${humanizeLabel(s.focus ?? 'workout')} · ${s.durationMinutes ?? '—'} min',
+                            onTap: () => toggleSelected(s.id),
+                          )
+                        : SwipeToRemove(
+                            itemKey: ValueKey(s.id),
+                            action: 'Archive',
+                            confirmDismiss: (_) =>
+                                confirmDelete(context, label: s.title),
+                            onRemove: () async {
+                              try {
+                                await ref
+                                    .read(vivrantApiProvider)
+                                    .deleteGymSession(s.id);
+                                if (!mounted) return;
+                                setState(() {
+                                  _items = _items
+                                      .where((x) => x.id != s.id)
+                                      .toList();
+                                });
+                                ref.read(moduleCacheProvider).write(
+                                      ModuleCacheKeys.gymSessions,
+                                      _items,
+                                    );
+                                context.showSuccess('Session archived');
+                              } catch (e) {
+                                if (!mounted) return;
+                                context.showError(apiErrorMessage(e));
+                              }
+                            },
+                            child: VivrantPanel(
                       child: Row(
                         children: [
                           Expanded(
@@ -395,6 +448,7 @@ class _GymSessionsScreenState extends ConsumerState<GymSessionsScreen> {
                         ],
                       ),
                     ),
+                          ),
                   ),
                 ),
             ],

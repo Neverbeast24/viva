@@ -48,7 +48,7 @@ class _PrimaryButtonState extends State<PrimaryButton> {
           width: double.infinity,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
                   color: c.ink.withValues(alpha: c.dark ? 0.28 : 0.16),
