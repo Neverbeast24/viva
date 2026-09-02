@@ -1081,6 +1081,81 @@ Map<String, dynamic>? resolveSessionPlanDay(
   return pickTodaysPlanDay(days, date, trainingDays);
 }
 
+class MissedProgramDay {
+  const MissedProgramDay({
+    required this.day,
+    required this.focus,
+    required this.weekdayName,
+    required this.dateKey,
+    this.weekdayIso,
+  });
+
+  final String day;
+  final String focus;
+  final String weekdayName;
+  final String dateKey;
+  final int? weekdayIso;
+}
+
+String localDateKey(DateTime date) {
+  final local = date.toLocal();
+  final y = local.year.toString().padLeft(4, '0');
+  final m = local.month.toString().padLeft(2, '0');
+  final d = local.day.toString().padLeft(2, '0');
+  return '$y-$m-$d';
+}
+
+bool sessionCoversPlanDay(
+  Map<String, dynamic> session,
+  Map<String, dynamic> planDay,
+  String dateKey,
+) {
+  final loggedRaw = session['logged_at']?.toString();
+  final loggedAt = loggedRaw == null ? null : DateTime.tryParse(loggedRaw);
+  if (loggedAt != null && localDateKey(loggedAt) == dateKey) return true;
+  final title = (session['title']?.toString() ?? '').trim().toLowerCase();
+  final label = (planDay['day']?.toString() ?? '').trim().toLowerCase();
+  return label.isNotEmpty && title.startsWith(label);
+}
+
+/// Programmed sessions from the last few days that were never logged.
+List<MissedProgramDay> findMissedProgramDays(
+  List<Map<String, dynamic>> days,
+  List<Map<String, dynamic>> sessions, {
+  DateTime? date,
+  List<int>? trainingDays,
+  int lookbackDays = 6,
+}) {
+  if (days.isEmpty) return const [];
+  final now = date ?? DateTime.now();
+  final lookback = lookbackDays.clamp(1, 14);
+  final missed = <MissedProgramDay>[];
+  for (var offset = 1; offset <= lookback; offset++) {
+    final past = DateTime(now.year, now.month, now.day, 12).subtract(Duration(days: offset));
+    final planDay = pickTodaysPlanDay(days, past, trainingDays);
+    if (planDay == null) continue;
+    final key = localDateKey(past);
+    if (sessions.any((session) => sessionCoversPlanDay(session, planDay, key))) {
+      break;
+    }
+    final iso = weekdayIsoFromLabel(planDay['day']?.toString() ?? '') ?? past.weekday;
+    final weekday = gymWeekdays.firstWhere(
+      (item) => item.iso == iso,
+      orElse: () => (iso: iso, short: 'Day', full: planDay['day']?.toString() ?? 'Day'),
+    );
+    missed.add(
+      MissedProgramDay(
+        day: planDay['day']?.toString() ?? '',
+        focus: planDay['focus']?.toString() ?? '',
+        weekdayIso: iso,
+        weekdayName: weekday.full,
+        dateKey: key,
+      ),
+    );
+  }
+  return missed;
+}
+
 List<int>? planTrainingDaysList(Map<String, dynamic>? plan) {
   final raw = plan?['training_days'];
   if (raw is! List) return null;
@@ -1232,6 +1307,40 @@ Map<String, dynamic> emptyPlanExercise() => {
       'sets': '3 x 10',
       'rest': '60s',
     };
+
+/// Append a named move to a saved program day. Skips blanks, duplicates, and a full day.
+Map<String, dynamic> appendNamedExerciseToPlanDay(
+  Map<String, dynamic> day,
+  Map<String, dynamic> exercise, {
+  int max = 6,
+}) {
+  final exercises = [
+    for (final ex in (day['exercises'] as List? ?? const []))
+      if (ex is Map) Map<String, dynamic>.from(ex),
+  ];
+  final name = (exercise['name']?.toString() ?? '').trim();
+  if (name.isEmpty || exercises.length >= max) return day;
+  final needle = name.toLowerCase();
+  if (exercises.any((ex) => (ex['name']?.toString() ?? '').trim().toLowerCase() == needle)) {
+    return day;
+  }
+  return {
+    ...day,
+    'exercises': [...exercises, Map<String, dynamic>.from(exercise)],
+  };
+}
+
+List<Map<String, dynamic>> appendNamedExerciseToPlanDays(
+  List<Map<String, dynamic>> days,
+  int dayIndex,
+  Map<String, dynamic> exercise, {
+  int max = 6,
+}) {
+  if (dayIndex < 0 || dayIndex >= days.length) return days;
+  final next = clonePlanDays(days);
+  next[dayIndex] = appendNamedExerciseToPlanDay(next[dayIndex], exercise, max: max);
+  return next;
+}
 
 List<Map<String, dynamic>> clonePlanDays(List<Map<String, dynamic>> days) {
   return [

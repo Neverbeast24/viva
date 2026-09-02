@@ -11,7 +11,10 @@ import '../../../../shared/providers/module_cache.dart';
 import '../../../gym/presentation/widgets/program_session_panel.dart';
 
 class LogWorkoutScreen extends ConsumerStatefulWidget {
-  const LogWorkoutScreen({super.key});
+  const LogWorkoutScreen({super.key, this.initialPlanId, this.initialDayLabel});
+
+  final int? initialPlanId;
+  final String? initialDayLabel;
 
   @override
   ConsumerState<LogWorkoutScreen> createState() => _LogWorkoutScreenState();
@@ -86,6 +89,8 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
         children: [
           ProgramSessionPanel(
             plans: _plans,
+            initialPlanId: widget.initialPlanId,
+            initialDayLabel: widget.initialDayLabel,
             onLogged: () {
               if (mounted) context.pop();
             },

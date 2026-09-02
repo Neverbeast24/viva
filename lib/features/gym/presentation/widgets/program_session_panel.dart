@@ -15,6 +15,7 @@ import '../../../../shared/models/gym_exercise.dart';
 import '../../data/gym_labels.dart';
 import '../../data/gym_rest_alert.dart';
 import 'gym_move_picker.dart';
+import 'machine_detect_sheet.dart';
 
 class ProgramSessionPanel extends ConsumerStatefulWidget {
   const ProgramSessionPanel({
@@ -84,6 +85,8 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
   bool _restored = false;
   List<_RunnerItem> _extras = [];
   List<GymExercise> _catalog = const [];
+  List<Map<String, dynamic>> _sessions = const [];
+  bool _catchUpDismissed = false;
   final List<String> _removedKeys = [];
   final Map<String, _MoveMeta> _meta = {};
 
@@ -105,6 +108,25 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     _resetFromPlan();
     _restoreSession();
     _loadCatalog();
+    _loadSessions();
+  }
+
+  Future<void> _loadSessions() async {
+    try {
+      final rows = await ref.read(vivrantApiProvider).gymSessions();
+      if (!mounted) return;
+      setState(() {
+        _sessions = [
+          for (final row in rows)
+            {
+              'title': row.title,
+              'logged_at': row.loggedAt?.toIso8601String(),
+            },
+        ];
+      });
+    } catch (_) {
+      // Catch-up banner is optional when sessions fail to load.
+    }
   }
 
   Future<void> _loadCatalog() async {
@@ -190,6 +212,21 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
       label: widget.allowDayPick ? _dayLabel : null,
       trainingDays: planTrainingDaysList(plan),
     );
+  }
+
+  MissedProgramDay? get _missedDay {
+    final plan = _plan;
+    if (plan == null) return null;
+    final days = (plan['days'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final missed = findMissedProgramDays(
+      days,
+      _sessions,
+      trainingDays: planTrainingDaysList(plan),
+    );
+    return missed.isEmpty ? null : missed.first;
   }
 
   List<_RunnerItem> get _items {
@@ -712,6 +749,42 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     _persistSession();
   }
 
+  Future<void> _snapMachine() async {
+    await runMachinePhotoDetect(
+      context: context,
+      ref: ref,
+      exercises: _catalog,
+      plans: widget.plans,
+      onAddToSession: _addDetectedExtra,
+    );
+  }
+
+  void _addDetectedExtra(GymExercise exercise, String sets) {
+    final key = 'extra-${DateTime.now().millisecondsSinceEpoch}';
+    final rest = suggestGymMoveRest(exercise.name, equipment: exercise.equipment, catalog: _catalog);
+    final restSeconds = parseRestSeconds(rest);
+    final setCount = parseSetCount(sets).clamp(1, 10);
+    final item = _RunnerItem(
+      key: key,
+      name: exercise.name,
+      originalName: exercise.name,
+      setsLabel: sets.isEmpty ? '3 x 10' : sets,
+      rest: rest,
+      restSeconds: restSeconds,
+      setCount: setCount,
+      kind: 'addon',
+    );
+    setState(() {
+      _extras = [..._extras, item];
+      _checks[key] = List<bool>.filled(setCount, false);
+      _names[key] = exercise.name;
+      _weights[key] = '';
+      _meta[key] = _MoveMeta(setsLabel: item.setsLabel, rest: rest, restSeconds: restSeconds);
+    });
+    _persistSession();
+    if (mounted) context.showSuccess('Added ${exercise.name} to this workout.');
+  }
+
   void _removeMove(_RunnerItem item) {
     setState(() {
       _checks.remove(item.key);
@@ -796,10 +869,46 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     _persistSession();
   }
 
-  Future<void> _persistMove(int toIso) async {
+  void _removeSet(_RunnerItem item) {
+    if (parseTimedMinutes(_meta[item.key]?.setsLabel ?? item.setsLabel) != null) {
+      _nudgeMinutes(item, -5);
+      return;
+    }
+    final current = List<bool>.from(_checks[item.key] ?? List<bool>.filled(item.setCount, false));
+    if (current.length <= 1) return;
+    current.removeLast();
+    final setsLabel = '${current.length} x ${_repsFromSets(_meta[item.key]?.setsLabel ?? item.setsLabel)}';
+    final rest = _meta[item.key]?.rest ?? item.rest;
+    setState(() {
+      _checks[item.key] = current;
+      _meta[item.key] = _MoveMeta(setsLabel: setsLabel, rest: rest, restSeconds: parseRestSeconds(rest));
+      if (item.key.startsWith('extra-')) {
+        _extras = [
+          for (final row in _extras)
+            if (row.key == item.key)
+              _RunnerItem(
+                key: row.key,
+                name: row.name,
+                originalName: row.originalName,
+                setsLabel: setsLabel,
+                rest: rest,
+                restSeconds: parseRestSeconds(rest),
+                setCount: current.length,
+                kind: row.kind,
+              )
+            else
+              row,
+        ];
+      }
+    });
+    _persistSession();
+  }
+
+  Future<void> _persistMove(int toIso, {String? fromLabel}) async {
     final plan = _plan;
     final today = _sessionDay;
-    if (plan == null || today == null) return;
+    final fromDay = fromLabel ?? today?['day']?.toString();
+    if (plan == null || fromDay == null) return;
     final id = (plan['id'] as num?)?.toInt();
     if (id == null) return;
     final days = [
@@ -807,7 +916,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
         if (raw is Map) Map<String, dynamic>.from(raw),
     ];
     final fromIndex = days.indexWhere(
-      (day) => day['day']?.toString() == today['day']?.toString(),
+      (day) => day['day']?.toString() == fromDay,
     );
     if (fromIndex < 0) return;
     final next = moveSavedPlanDay(days, fromIndex, toIso);
@@ -897,6 +1006,71 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     }
   }
 
+  bool get _catchingUp {
+    final missed = _missedDay;
+    final session = _sessionDay;
+    final calendar = _calendarToday;
+    return missed != null &&
+        session != null &&
+        missed.day == session['day']?.toString() &&
+        calendar?['day']?.toString() != session['day']?.toString();
+  }
+
+  bool get _showCatchUp {
+    final missed = _missedDay;
+    final session = _sessionDay;
+    return widget.allowDayPick &&
+        missed != null &&
+        !_catchUpDismissed &&
+        (session == null || missed.day != session['day']?.toString());
+  }
+
+  Widget _catchUpBanner(BuildContext context) {
+    final missed = _missedDay;
+    if (missed == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Skipped ${missed.weekdayName} · ${humanizeLabel(missed.focus)}',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Use that workout today without changing your weekly plan.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  _dayLabel = missed.day;
+                  _resetFromPlan();
+                });
+                _restoreSession();
+              },
+              child: Text('Use ${missed.weekdayName} today'),
+            ),
+            OutlinedButton(
+              onPressed: _saving
+                  ? null
+                  : () => _persistMove(DateTime.now().weekday, fromLabel: missed.day),
+              child: Text('Move ${missed.weekdayName} here'),
+            ),
+            TextButton(
+              onPressed: () => setState(() => _catchUpDismissed = true),
+              child: const Text("Keep today's"),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = VivrantColors.of(context);
@@ -937,6 +1111,10 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
                     'Rest day on the calendar — pick a saved day to train anyway.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
+                  if (_showCatchUp) ...[
+                    const SizedBox(height: 12),
+                    _catchUpBanner(context),
+                  ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: null,
@@ -980,9 +1158,24 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Check off each set. Rest starts from the program — skip anytime. Swipe a move left or right to remove it. Leave and come back: your sets and rest timer stay.',
+            'Check off each set. Rest starts from the program — skip anytime. Use − Set for fewer rounds. Swipe a move to remove it. Leave and come back: your sets and rest timer stay.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (_catchingUp && _missedDay != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Catching up on ${_missedDay!.weekdayName} · ${humanizeLabel(_missedDay!.focus)} — weekly plan stays as-is.',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: c.accent,
+                fontSize: 12,
+              ),
+            ),
+          ],
+          if (_showCatchUp) ...[
+            const SizedBox(height: 8),
+            _catchUpBanner(context),
+          ],
           if (_restored) ...[
             const SizedBox(height: 8),
             Text(
@@ -1191,6 +1384,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
               onToggleExercise: () => _toggleExercise(item),
               onToggleSet: (index) => _toggleSet(item, index),
               onAddSet: () => _addSet(item),
+              onRemoveSet: () => _removeSet(item),
               onNudgeMinutes: (delta) => _nudgeMinutes(item, delta),
               onSwap: item.swap == null ? null : () => _swap(item),
             ),
@@ -1201,6 +1395,11 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
             onPressed: _addExtra,
             icon: const Icon(Icons.add_rounded),
             label: const Text('Add a move'),
+          ),
+          TextButton.icon(
+            onPressed: _snapMachine,
+            icon: const Icon(Icons.photo_camera_outlined),
+            label: const Text('Snap a machine'),
           ),
           const SizedBox(height: 8),
           ElevatedButton(
@@ -1227,6 +1426,7 @@ class _ExerciseCard extends StatelessWidget {
     required this.onToggleExercise,
     required this.onToggleSet,
     required this.onAddSet,
+    required this.onRemoveSet,
     required this.onNudgeMinutes,
     this.onSwap,
   });
@@ -1241,6 +1441,7 @@ class _ExerciseCard extends StatelessWidget {
   final VoidCallback onToggleExercise;
   final ValueChanged<int> onToggleSet;
   final VoidCallback onAddSet;
+  final VoidCallback onRemoveSet;
   final ValueChanged<int> onNudgeMinutes;
   final VoidCallback? onSwap;
 
@@ -1328,6 +1529,10 @@ class _ExerciseCard extends StatelessWidget {
                       selected: checks[i],
                       onSelected: (_) => onToggleSet(i),
                     ),
+                  ActionChip(
+                    label: const Text('− Set'),
+                    onPressed: checks.length <= 1 ? null : onRemoveSet,
+                  ),
                   ActionChip(label: const Text('+ Set'), onPressed: onAddSet),
                 ],
               ],

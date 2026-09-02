@@ -338,4 +338,47 @@ void main() {
       expect(names, ['Fly', 'Press']);
     });
   });
+
+  group('findMissedProgramDays', () {
+    final named = [
+      {
+        'day': 'Monday · Push',
+        'focus': 'Push',
+        'exercises': [
+          {'name': 'Press', 'sets': '3 x 10'},
+        ],
+      },
+      {
+        'day': 'Wednesday · Pull',
+        'focus': 'Pull',
+        'exercises': [
+          {'name': 'Row', 'sets': '3 x 10'},
+        ],
+      },
+    ];
+
+    test('flags Monday when Tuesday arrives with no gym log', () {
+      final missed = findMissedProgramDays(
+        named,
+        const [],
+        date: DateTime(2026, 8, 18, 12),
+      );
+      expect(missed.first.day, 'Monday · Push');
+      expect(missed.first.weekdayName, 'Monday');
+    });
+
+    test('treats a Tuesday catch-up log as covering Monday', () {
+      final missed = findMissedProgramDays(
+        named,
+        [
+          {
+            'title': 'Monday · Push: Push',
+            'logged_at': DateTime(2026, 8, 18, 19).toIso8601String(),
+          },
+        ],
+        date: DateTime(2026, 8, 18, 20),
+      );
+      expect(missed, isEmpty);
+    });
+  });
 }

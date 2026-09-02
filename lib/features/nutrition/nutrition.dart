@@ -6,3 +6,4 @@ export 'presentation/screens/meals_history_screen.dart';
 export 'presentation/screens/nutrition_screen.dart';
 export 'presentation/widgets/macro_chips.dart';
 export 'presentation/widgets/meal_list_tile.dart';
+export 'data/meal_suggestions.dart';

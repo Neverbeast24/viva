@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../data/vivrant_api.dart';
 import '../../../../shared/models/models.dart';
 import '../../../../shared/providers/module_cache.dart';
 import '../../../../shared/providers/shell_tab_provider.dart';
+import '../../data/meal_suggestions.dart';
 
 /// Nutrition tab — destinations only. Meals live on history / log pages.
 class NutritionScreen extends ConsumerStatefulWidget {
@@ -83,6 +85,25 @@ class _NutritionScreenState extends ConsumerState<NutritionScreen> {
     }
   }
 
+  Future<void> _quickLog(QuickMeal meal) async {
+    try {
+      await ref.read(vivrantApiProvider).logMeal({
+        'meal_name': meal.name,
+        'meal_type': meal.mealType,
+        'calories': meal.calories,
+        'protein_g': meal.proteinG,
+        'carbs_g': meal.carbsG,
+        'fat_g': meal.fatG,
+      });
+      if (!mounted) return;
+      context.showSuccess('Logged ${meal.name}');
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      context.showError(apiErrorMessage(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(shellTabIndexProvider, (_, next) {
@@ -91,6 +112,8 @@ class _NutritionScreenState extends ConsumerState<NutritionScreen> {
     final totalCal = _meals.fold<double>(0, (s, m) => s + (m.calories ?? 0));
     const calorieGoal = 2000;
     final calLeft = (calorieGoal - totalCal).round().clamp(0, calorieGoal);
+    final suggestions = nextMealSuggestions(_meals.map((m) => m.mealType));
+    final slot = suggestedMealType();
 
     return SafeArea(
       child: RefreshIndicator(
@@ -120,6 +143,23 @@ class _NutritionScreenState extends ConsumerState<NutritionScreen> {
                 caption: '$calLeft kcal left of $calorieGoal',
                 icon: Icons.restaurant,
               ),
+            const SectionGap(),
+            SectionLabel('Suggested $slot'),
+            for (final meal in suggestions) ...[
+              ModuleTile(
+                icon: Icons.restaurant_outlined,
+                label: meal.name,
+                caption: '${meal.hint} · ~${meal.calories} kcal',
+                onTap: () => _quickLog(meal),
+              ),
+              const TileGap(),
+            ],
+            ModuleTile(
+              icon: Icons.auto_awesome,
+              label: 'AI meal idea',
+              caption: 'From pantry and today’s logs',
+              onTap: () => context.push('/nutrition/history'),
+            ),
             const SectionGap(),
             const SectionLabel('Log'),
             ModuleTile(

@@ -172,7 +172,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ),
                   vivrantGoRoute(
                     path: 'log',
-                    builder: (_, __) => const LogWorkoutScreen(),
+                    builder: (_, state) => LogWorkoutScreen(
+                      initialDayLabel: state.uri.queryParameters['day'],
+                      initialPlanId: int.tryParse(state.uri.queryParameters['plan'] ?? ''),
+                    ),
                   ),
                 ],
               ),

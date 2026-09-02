@@ -8,6 +8,7 @@ import '../../../../core/widgets/widgets.dart';
 import '../../../../data/vivrant_api.dart';
 import '../../../../shared/constants/enums.dart';
 import '../../../../shared/models/models.dart';
+import '../../data/meal_suggestions.dart';
 
 class LogMealScreen extends ConsumerStatefulWidget {
   const LogMealScreen({super.key});
@@ -333,6 +334,27 @@ class _LogMealScreenState extends ConsumerState<LogMealScreen>
             ),
             const SizedBox(height: 16),
           ],
+          SectionLabel('Suggested ${suggestedMealType()}'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final meal in nextMealSuggestions(_meals.map((m) => m.mealType)))
+                ActionChip(
+                  label: Text(meal.name),
+                  onPressed: () {
+                    _name.text = meal.name;
+                    _type = meal.mealType;
+                    _cal.text = '${meal.calories}';
+                    _protein.text = '${meal.proteinG}';
+                    _carbs.text = '${meal.carbsG}';
+                    _fat.text = '${meal.fatG}';
+                    setState(() {});
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
           EasyEntryToggle(
             value: _mode,
             onChanged: _setMode,

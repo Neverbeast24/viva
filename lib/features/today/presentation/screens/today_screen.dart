@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/vivrant_colors.dart';
+import '../../../../core/utils/bmi.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../data/vivrant_api.dart';
@@ -125,6 +126,17 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
     final water = (_data?['water_ml'] as num?)?.toInt() ??
         (checkin?['water_ml'] as num?)?.toInt() ??
         0;
+    final bmiRaw = _data?['bmi'];
+    final bmi = bmiRaw is Map
+        ? Map<String, dynamic>.from(bmiRaw)
+        : summarizeBmi(profile?.heightCm, profile?.weightKg);
+    final program = _data?['program'];
+    final missed = program is Map ? program['missed'] : null;
+    final missedDay = missed is Map ? missed['day']?.toString() : null;
+    final missedName = missed is Map
+        ? (missed['weekdayName'] ?? missed['weekday_name'] ?? missed['day'])?.toString()
+        : null;
+    final missedFocus = missed is Map ? missed['focus']?.toString() : null;
 
     return SafeArea(
       child: RefreshIndicator(
@@ -188,10 +200,45 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
                 VivrantPanel(
                   title: 'At a glance',
                   child: Text(
-                    '$calories kcal · $steps steps · $water ml water',
+                    [
+                      '$calories kcal · $steps steps · $water ml water',
+                      if (bmi != null)
+                        'BMI ${(bmi['bmi'] as num).toString()} · ${bmi['band_label'] ?? bmi['bandLabel'] ?? ''}'
+                            .trim(),
+                    ].where((line) => line.isNotEmpty).join('\n'),
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
+                if (bmi == null) ...[
+                  const TileGap(),
+                  ModuleTile(
+                    icon: Icons.monitor_weight_outlined,
+                    label: 'Add height & weight',
+                    caption: 'See BMI on Today and personalize plans',
+                    onTap: () => context.push('/profile/health'),
+                  ),
+                ] else ...[
+                  const TileGap(),
+                  ModuleTile(
+                    icon: Icons.monitor_weight_outlined,
+                    label: 'BMI ${(bmi['bmi'] as num).toString()}',
+                    caption: '${bmi['band_label'] ?? bmi['bandLabel'] ?? 'Screening measure'} · tap to update',
+                    onTap: () => context.push('/profile/health'),
+                  ),
+                ],
+                if (missedDay != null && missedDay.isNotEmpty) ...[
+                  const TileGap(),
+                  ModuleTile(
+                    icon: Icons.fitness_center,
+                    label: 'Skipped ${missedName ?? missedDay}',
+                    caption: missedFocus == null || missedFocus.isEmpty
+                        ? 'Use that workout today — weekly plan stays as-is'
+                        : '$missedFocus · train it today without changing the week',
+                    onTap: () => context.push(
+                      '/gym/sessions?day=${Uri.encodeQueryComponent(missedDay)}',
+                    ),
+                  ),
+                ],
                 const TileGap(),
                 VivrantPanel(
                   title: 'Quick check-in',
