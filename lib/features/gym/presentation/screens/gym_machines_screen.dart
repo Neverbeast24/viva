@@ -12,6 +12,7 @@ import '../../../../shared/providers/module_cache.dart';
 import '../../data/gym_labels.dart';
 import '../widgets/exercise_demo_card.dart';
 import '../widgets/exercise_demo_sheet.dart';
+import '../widgets/machine_detect_sheet.dart';
 import '../widgets/todays_program_moves.dart';
 
 class GymMachinesScreen extends ConsumerStatefulWidget {
@@ -111,6 +112,125 @@ class _GymMachinesScreenState extends ConsumerState<GymMachinesScreen> {
     }).toList();
   }
 
+  Future<void> _snapMachine() async {
+    await runMachinePhotoDetect(
+      context: context,
+      ref: ref,
+      exercises: _exercises,
+      plans: _plans,
+      onPlanUpdated: (plan) {
+        final id = (plan['id'] as num?)?.toInt();
+        if (id == null) return;
+        setState(() {
+          _plans = [
+            for (final item in _plans)
+              if ((item['id'] as num?)?.toInt() == id) plan else item,
+          ];
+        });
+      },
+    );
+  }
+
+  Future<void> _suggestMachines() async {
+    try {
+      final res = await ref.read(vivrantApiProvider).recommendMachinesAi();
+      if (!mounted) return;
+      final payload = res['recommendation'] is Map
+          ? Map<String, dynamic>.from(res['recommendation'] as Map)
+          : res;
+      final recs = (payload['recommendations'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList()
+        ..sort(
+          (a, b) => ((a['priority'] as num?)?.toInt() ?? 99)
+              .compareTo((b['priority'] as num?)?.toInt() ?? 99),
+        );
+      if (recs.isEmpty) {
+        context.showInfo(payload['summary']?.toString() ?? 'No suggestions yet.');
+        return;
+      }
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (ctx) {
+          return SafeArea(
+            child: Padding(
+              padding: VivrantLayout.sheetPadding,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    payload['title']?.toString() ?? 'Suggested machines',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  if ((payload['summary']?.toString() ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      payload['summary'].toString(),
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: recs.length,
+                      separatorBuilder: (_, __) => const Divider(height: 20),
+                      itemBuilder: (_, index) {
+                        final item = recs[index];
+                        final slug = item['demo_slug']?.toString();
+                        GymExercise? demo;
+                        if (slug != null && slug.isNotEmpty) {
+                          for (final ex in _exercises) {
+                            if (ex.slug == slug) {
+                              demo = ex;
+                              break;
+                            }
+                          }
+                        }
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: demo != null ? _RecThumb(exercise: demo) : null,
+                          title: Text(
+                            item['machine']?.toString() ?? 'Machine',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            [
+                              if (item['why'] != null) item['why'].toString(),
+                              if (item['sets'] != null) 'Sets: ${item['sets']}',
+                            ].where((e) => e.isNotEmpty).join('\n'),
+                          ),
+                          trailing: demo != null && demo.hasDemo
+                              ? TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    showExerciseDemoSheet(context, demo!);
+                                  },
+                                  child: const Text('Demo'),
+                                )
+                              : null,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      context.showError(apiErrorMessage(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -135,114 +255,20 @@ class _GymMachinesScreenState extends ConsumerState<GymMachinesScreen> {
             ),
             const SectionGap(),
             Text(
-              'Browse machines and watch short demos. Or get simple suggestions for you.',
+              'Browse machines, snap the one in front of you, or get simple suggestions.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 14),
             ElevatedButton.icon(
-              onPressed: () async {
-                try {
-                  final res =
-                      await ref.read(vivrantApiProvider).recommendMachinesAi();
-                  if (!mounted) return;
-                  final recs = (res['recommendations'] as List? ?? const [])
-                      .whereType<Map>()
-                      .map((e) => Map<String, dynamic>.from(e))
-                      .toList()
-                    ..sort(
-                      (a, b) => ((a['priority'] as num?)?.toInt() ?? 99)
-                          .compareTo((b['priority'] as num?)?.toInt() ?? 99),
-                    );
-                  if (recs.isEmpty) {
-                    context.showInfo(
-                      res['summary']?.toString() ?? 'No suggestions yet.',
-                    );
-                    return;
-                  }
-                  await showModalBottomSheet<void>(
-                    context: context,
-                    isScrollControlled: true,
-                    showDragHandle: true,
-                    builder: (ctx) {
-                      return SafeArea(
-                        child: Padding(
-                          padding: VivrantLayout.sheetPadding,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                res['title']?.toString() ?? 'Suggested machines',
-                                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                              ),
-                              if ((res['summary']?.toString() ?? '').isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  res['summary'].toString(),
-                                  style: Theme.of(ctx).textTheme.bodySmall,
-                                ),
-                              ],
-                              const SizedBox(height: 12),
-                              Flexible(
-                                child: ListView.separated(
-                                  shrinkWrap: true,
-                                  itemCount: recs.length,
-                                  separatorBuilder: (_, __) => const Divider(height: 20),
-                                  itemBuilder: (_, index) {
-                                    final item = recs[index];
-                                    final slug = item['demo_slug']?.toString();
-                                    GymExercise? demo;
-                                    if (slug != null && slug.isNotEmpty) {
-                                      for (final ex in _exercises) {
-                                        if (ex.slug == slug) {
-                                          demo = ex;
-                                          break;
-                                        }
-                                      }
-                                    }
-                                    return ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      leading: demo != null
-                                          ? _RecThumb(exercise: demo)
-                                          : null,
-                                      title: Text(
-                                        item['machine']?.toString() ?? 'Machine',
-                                        style: const TextStyle(fontWeight: FontWeight.w800),
-                                      ),
-                                      subtitle: Text(
-                                        [
-                                          if (item['why'] != null) item['why'].toString(),
-                                          if (item['sets'] != null) 'Sets: ${item['sets']}',
-                                        ].where((e) => e.isNotEmpty).join('\n'),
-                                      ),
-                                      trailing: demo != null && demo.hasDemo
-                                          ? TextButton(
-                                              onPressed: () {
-                                                Navigator.pop(ctx);
-                                                showExerciseDemoSheet(context, demo!);
-                                              },
-                                              child: const Text('Demo'),
-                                            )
-                                          : null,
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                } catch (e) {
-                  if (!mounted) return;
-                  context.showError(apiErrorMessage(e));
-                }
-              },
+              onPressed: _suggestMachines,
               icon: const Icon(Icons.auto_awesome),
               label: const Text('Suggest machines for me'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _snapMachine,
+              icon: const Icon(Icons.photo_camera_outlined),
+              label: const Text('Snap a machine'),
             ),
             const SizedBox(height: 16),
             if (_loading)

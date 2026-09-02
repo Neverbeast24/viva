@@ -17,6 +17,7 @@ export 'presentation/widgets/exercise_demo_card.dart';
 export 'presentation/widgets/exercise_demo_sheet.dart';
 export 'presentation/widgets/gym_nav_card.dart';
 export 'presentation/widgets/gym_move_picker.dart';
+export 'presentation/widgets/machine_detect_sheet.dart';
 export 'presentation/widgets/program_session_panel.dart';
 export 'presentation/widgets/saved_plan_editor_sheet.dart';
 export 'presentation/widgets/todays_program_moves.dart';

@@ -381,4 +381,30 @@ void main() {
       expect(missed, isEmpty);
     });
   });
+
+  group('appendNamedExerciseToPlanDay', () {
+    test('appends a new named move and skips duplicates', () {
+      const day = {
+        'day': 'Monday · Legs',
+        'focus': 'Legs',
+        'exercises': [
+          {'name': 'Leg Press Machine', 'sets': '3 x 10', 'rest': '60s'},
+        ],
+      };
+      final added = appendNamedExerciseToPlanDay(day, {
+        'name': 'Leg Extension',
+        'sets': '3 x 12',
+        'rest': '60s',
+      });
+      expect((added['exercises'] as List).length, 2);
+      expect(
+        (appendNamedExerciseToPlanDay(day, {
+          'name': 'leg press machine',
+          'sets': '3 x 8',
+          'rest': '90s',
+        })['exercises'] as List).length,
+        1,
+      );
+    });
+  });
 }

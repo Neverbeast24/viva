@@ -763,7 +763,7 @@ class _ProgramSessionPanelState extends ConsumerState<ProgramSessionPanel>
     final key = 'extra-${DateTime.now().millisecondsSinceEpoch}';
     final rest = suggestGymMoveRest(exercise.name, equipment: exercise.equipment, catalog: _catalog);
     final restSeconds = parseRestSeconds(rest);
-    final setCount = parseSetCount(sets).clamp(1, 10);
+    final setCount = parseSetCount(sets).clamp(1, 10).toInt();
     final item = _RunnerItem(
       key: key,
       name: exercise.name,

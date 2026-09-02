@@ -7,7 +7,7 @@
 **Base URL:** same host as VIVRΛNT Web (e.g. `https://your-app.vercel.app`)  
 **Auth:** `Authorization: Bearer <supabase_access_token>` on all `/api/mobile/*` routes  
 **Content-Type:** `application/json`  
-**Last updated:** 20 August 2026
+**Last updated:** 2 September 2026
 
 ---
 
@@ -318,6 +318,7 @@ Upsert `daily_checkins` on `(user_id, checkin_date)` — same as `saveCheckin`.
 | `GET`/`PUT`/`POST`/`DELETE` | `/api/mobile/gym/plans/draft` | program builder draft |
 | `POST` | `/api/mobile/gym/plans/draft/commit` | save draft as a plan |
 | `POST` | `/api/mobile/gym/machines/recommend` | `recommendMachinesWithAi` |
+| `POST` | `/api/mobile/gym/machines/identify` | `identifyMachineFromPhoto` (multipart `photo`) |
 
 **POST AI plan prefs (optional)**
 
@@ -335,6 +336,27 @@ Upsert `daily_checkins` on `(user_id, checkin_date)` — same as `saveCheckin`.
 `level` allowlist: `beginner`, `intermediate`, `advanced` (defaults to `beginner`). Working loads are scaled from profile body weight using this level.
 
 `avoid_targets` allowlist: `core`, `arms`, `forearms`, `shoulders`, `chest`, `back`, `traps`, `legs`, `glutes`, `hamstrings`, `calves`, `inner_thighs`, `lower_back`, `cardio`, `mobility`.
+
+**POST identify machine** (`multipart/form-data`, field `photo` — JPG/PNG/WEBP/GIF under 4MB)
+
+```json
+{
+  "ok": true,
+  "detection": {
+    "found": true,
+    "machine": "Leg Press Machine",
+    "demo_slug": "leg-press",
+    "confidence": 91,
+    "why": "Plate-loaded sled with a back pad.",
+    "how_to_use": "Feet mid-platform, press without locking out.",
+    "sets": "3 x 12",
+    "muscle_group": "legs",
+    "notes": "",
+    "alternatives": []
+  },
+  "exercise": { "slug": "leg-press", "name": "Leg Press Machine" }
+}
+```
 
 **POST session**
 

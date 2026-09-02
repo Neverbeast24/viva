@@ -16,6 +16,7 @@ import '../../../../shared/providers/module_cache.dart';
 import '../../../../shared/providers/persistent_store.dart';
 import '../../data/gym_labels.dart';
 import '../widgets/exercise_demo_sheet.dart';
+import '../widgets/machine_detect_sheet.dart';
 import '../widgets/saved_plan_day_actions.dart';
 import '../widgets/saved_plan_editor_sheet.dart';
 
@@ -815,6 +816,32 @@ class _GymPlansScreenState extends ConsumerState<GymPlansScreen>
                     Text(
                       'Optional: mark exercises you know. If you pick any, your program uses only those (plus anything you type) and will not add extras like a leg press.',
                       style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => runMachinePhotoDetect(
+                        context: context,
+                        ref: ref,
+                        exercises: _exercises,
+                        plans: _plans,
+                        onMarkedKnown: (slug) {
+                          setState(() => _knownSlugs.add(slug));
+                          _persistPrefs();
+                        },
+                        onPlanUpdated: (plan) {
+                          final id = (plan['id'] as num?)?.toInt();
+                          if (id == null) return;
+                          setState(() {
+                            _plans = [
+                              for (final item in _plans)
+                                if ((item['id'] as num?)?.toInt() == id) plan else item,
+                            ];
+                          });
+                          ref.read(moduleCacheProvider).write(ModuleCacheKeys.gymPlans, _plans);
+                        },
+                      ),
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('Snap a machine'),
                     ),
                     const SizedBox(height: 8),
                     Wrap(

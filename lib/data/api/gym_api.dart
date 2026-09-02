@@ -157,4 +157,22 @@ extension VivrantGymApi on VivrantApi {
     );
     return Map<String, dynamic>.from(res.data ?? {});
   }
+
+  Future<Map<String, dynamic>> identifyMachineFromPhoto(String photoPath) async {
+    final name = photoPath.split(RegExp(r'[\\/]')).last;
+    final mime = imageMediaType(name);
+    final form = FormData.fromMap({
+      'photo': await MultipartFile.fromFile(
+        photoPath,
+        filename: imageUploadFilename(name, prefix: 'machine'),
+        contentType: mime,
+      ),
+    });
+    final res = await _client.postMultipart<Map<String, dynamic>>(
+      '/api/mobile/gym/machines/identify',
+      form,
+      options: ApiClient.aiOptions,
+    );
+    return Map<String, dynamic>.from(res.data ?? {});
+  }
 }
